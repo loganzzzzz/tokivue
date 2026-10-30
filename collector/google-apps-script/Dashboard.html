@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:dark;font-family:Inter,-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;background:#030d14;color:#dfebff}*{box-sizing:border-box}body{margin:0;padding:26px 28px}header{display:flex;align-items:center;justify-content:space-between}h1{font-size:30px;letter-spacing:-1px;color:#fff;margin:0}.status{font-size:15px;color:#91a4b7}.status.good{color:#78d776}.status.warn{color:#efbd65}.status::before{content:'●';margin-right:7px}.dial{position:relative;width:290px;height:290px;margin:26px auto 20px}svg{width:100%;height:100%;transform:rotate(-90deg)}circle{fill:none;stroke-width:14}.track{stroke:#1c2e43}.progress{stroke:#448eff;stroke-linecap:round;transition:stroke-dasharray .6s}.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}.percent{font-size:90px;font-weight:650;letter-spacing:-5px;line-height:1.05}.percent small{font-size:46px;letter-spacing:-2px}.center p{margin:12px 0 0;font-size:23px;color:#b2bdcb}.reset{text-align:center;margin-bottom:25px;font-size:23px}.reset small{display:block;font-size:16px;color:#8797a9;margin-top:9px}.stats{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #223544;border-bottom:1px solid #223544;padding:20px 0;gap:20px}.stats>div+div{border-left:1px solid #223544;padding-left:26px}.label{font-size:19px;color:#a0adbd}.value{font-size:32px;color:#f1f5ff;font-weight:600;margin-top:6px}.cost{display:flex;justify-content:space-between;align-items:center;padding:20px 0;border-bottom:1px solid #223544;font-size:20px;color:#a0adbd}.cost strong{color:#4c91ff;font-size:29px}.notes{text-align:center;color:#8494a6;font-size:15px;line-height:1.8;margin:15px 0 20px}button{border:0;border-radius:9px;padding:15px 24px;font-size:18px;cursor:pointer;background:#224caa;color:#e2ecff;width:100%}button:disabled{opacity:.6;cursor:wait}.footer{text-align:center;color:#718497;font-size:14px;margin-top:14px}details{color:#8c9eb1;font-size:14px;line-height:1.7;margin-top:16px}summary{cursor:pointer;color:#89bfff}#devices{padding:0;list-style:none}#devices li{display:flex;justify-content:space-between;gap:12px}#error{color:#efbd65;font-size:14px;text-align:center;min-height:20px;margin-top:8px}@media(max-width:400px){body{padding:20px 16px}.dial{width:250px;height:250px}.cost{font-size:17px}.cost strong{font-size:24px}.value{font-size:26px}}
+</style></head><body>
+<header><h1>Codex 用量</h1><span class="status" id="status">等待数据</span></header>
+<div class="dial"><svg viewBox="0 0 220 220" aria-label="本周剩余额度"><circle class="track" cx="110" cy="110" r="100"/><circle id="arc" class="progress" cx="110" cy="110" r="100" stroke-dasharray="0 628.319"/></svg><div class="center"><div class="percent" id="percent">—</div><p>本周剩余</p></div></div>
+<div class="reset" id="reset">等待首次采集<small>北京时间</small></div>
+<div class="stats"><div><div class="label">今日 Tokens</div><div class="value" id="tokens">—</div></div><div><div class="label">重置卡</div><div class="value" id="credits">—</div></div></div>
+<div class="cost"><span>本窗口采集估值</span><strong id="window-cost">—</strong></div>
+<div class="cost"><span>累计采集估值</span><strong id="total-cost">—</strong></div>
+<p class="notes">API 等价估算 · 非订阅余额<br>工作日白天每 10 分钟采集，其余每小时</p>
+<button id="refresh" onclick="refresh()">刷新数据</button><div id="error" role="status"></div><div class="footer" id="updated">尚未获取数据</div>
+<details><summary>设备与数据说明</summary><ul id="devices"></ul><p id="coverage"></p><p>账号额度使用最新快照，不累加设备百分比。Token 按用量记录指纹去重，只覆盖已上报的本地记录。云端任务或已删除的日志可能不在其中。</p><p>输入 token 包含缓存部分；推理 token 包含在输出中，估值不重复计费。Prices 表未填写的模型不会按零价格估算。重置卡仅展示数量。</p><p>“刷新”读取表格，不会唤醒设备采集。电脑睡眠时暂停，唤醒后补采。</p></details>
+<script>
+const $=id=>document.getElementById(id);let countdown=60;let busy=false;
+const date=x=>new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(x));
+const count=x=>x===null||x===undefined?'—':x>=1e6?(x/1e6).toFixed(2)+'M':new Intl.NumberFormat('zh-CN').format(x);
+const cost=x=>x===null?'未配置':new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(x);
+function render(data){
+ if(data.empty){$('status').textContent='等待上传';return;}
+ const age=(Date.now()-Date.parse(data.observed_at))/60000;
+ $('status').textContent=age>75?'数据待更新':'已同步';$('status').className='status '+(age>75?'warn':'good');
+ const q=data.quota;const valid=q&&q.used_percent!==null&&q.resets_at&&q.resets_at*1000>Date.now();
+ const remaining=valid?Math.max(0,Math.min(100,100-q.used_percent)):null;
+ $('percent').replaceChildren();$('percent').append(remaining===null?'—':String(Math.round(remaining)));
+ if(remaining!==null){const small=document.createElement('small');small.textContent='%';$('percent').append(small);}
+ $('arc').setAttribute('stroke-dasharray',((remaining||0)/100*628.319)+' 628.319');
+ $('reset').replaceChildren(document.createTextNode(q&&q.resets_at?'下次重置 '+date(q.resets_at*1000):'重置时间未知'));
+ const sub=document.createElement('small');sub.textContent=valid?'北京时间 · '+Math.ceil((q.resets_at*1000-Date.now())/3600000)+' 小时后':'北京时间 · 等待最新额度';$('reset').append(sub);
+ $('tokens').textContent=count(data.today_tokens);$('credits').textContent=data.reset_credits===null?'—':data.reset_credits+' 张';
+ $('window-cost').textContent=cost(data.window_cost);$('total-cost').textContent=cost(data.total_cost);
+ $('updated').textContent='最近采集 '+date(data.observed_at)+' · 每 60 秒刷新表格';
+ $('coverage').textContent='已采集 '+count(data.recorded_tokens)+' Tokens'+(data.since?'，自 '+data.since+' 起':'')+'。';
+ $('devices').replaceChildren();data.devices.forEach(d=>{const li=document.createElement('li');const a=document.createElement('span');a.textContent=d.name;const b=document.createElement('span');b.textContent=date(d.observed_at);li.append(a,b);$('devices').append(li);});
+}
+function refresh(){
+ if(busy)return;busy=true;$('refresh').disabled=true;$('refresh').textContent='正在读取…';$('error').textContent='';
+ const done=()=>{busy=false;countdown=60;$('refresh').disabled=false;$('refresh').textContent='60 秒后刷新';};
+ if(!globalThis.google?.script?.run){$('error').textContent='请从 Google Sheets 的“Codex 用量”菜单打开此看板。';done();return;}
+ google.script.run.withSuccessHandler(data=>{render(data);done();}).withFailureHandler(()=>{$('error').textContent='读取失败，请检查授权或稍后重试';$('status').textContent='读取失败';$('status').className='status warn';done();}).getDashboardData();
+}
+setInterval(()=>{if(!busy){countdown--;if(countdown<=0)refresh();else $('refresh').textContent=countdown+' 秒后刷新';}},1000);refresh();
+</script></body></html>
