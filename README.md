@@ -10,10 +10,13 @@
 
 浅色控制中心风格：周剩余额度、今日 Tokens、生图统计和三项美元估值集中展示；右上角可手动重连。
 
-<p>
-  <img src="docs/images/macos-dashboard.png" alt="macOS 正常同步用量卡片，使用虚构示例数据" width="344" />
-  <img src="docs/images/macos-offline.png" alt="macOS 离线缓存与自动重试状态，使用虚构示例数据" width="344" />
-</p>
+<table>
+  <tr><th>正常同步</th><th>离线重试</th></tr>
+  <tr>
+    <td valign="top"><img src="docs/images/macos-dashboard.png" alt="macOS 正常同步用量卡片，使用虚构示例数据" width="344" /></td>
+    <td valign="top"><img src="docs/images/macos-offline.png" alt="macOS 离线缓存与自动重试状态，使用虚构示例数据" width="344" /></td>
+  </tr>
+</table>
 
 左图为正常同步，右图为暂时离线：保留上次结果，并显示重试提示。点击弹窗外部可关闭，窗口也会在 30 秒后自动收起。
 
