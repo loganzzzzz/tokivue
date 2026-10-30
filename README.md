@@ -2,6 +2,27 @@
 
 本地用量采集器、Google Sheets 汇总接收端和 macOS 原生菜单栏看板。
 
+## 界面预览
+
+以下图片均使用虚构示例数据。macOS 卡片由实际界面组件渲染；Google Sheets 图片为布局示意，不含真实账号、表格链接或用量记录。
+
+### macOS 状态栏弹窗
+
+浅色控制中心风格：周剩余额度、今日 Tokens、生图统计和三项美元估值集中展示；右上角可手动重连。
+
+<p>
+  <img src="docs/images/macos-dashboard.png" alt="macOS 正常同步用量卡片，使用虚构示例数据" width="344" />
+  <img src="docs/images/macos-offline.png" alt="macOS 离线缓存与自动重试状态，使用虚构示例数据" width="344" />
+</p>
+
+左图为正常同步，右图为暂时离线：保留上次结果，并显示重试提示。点击弹窗外部可关闭，窗口也会在 30 秒后自动收起。
+
+### Google Sheets 用量看板
+
+多设备共用一个汇总表；三项估值顺序与菜单栏一致。下方数据表保存去重后的用量事件与额度快照。
+
+<img src="docs/images/sheets-dashboard.png" alt="Google Sheets 浅色用量看板布局示意，使用虚构示例数据" width="500" />
+
 ## 功能
 
 - macOS / Windows 定时读取本地 Codex 日志及只读账号额度接口，不启动模型任务。
