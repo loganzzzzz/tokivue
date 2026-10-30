@@ -183,7 +183,7 @@ public final class CodexAppServerClient {
             params: [
                 "clientInfo": [
                     "name": "codex_quota_menubar",
-                    "title": "Codex Quota Menu",
+                    "title": "Tokivue Menu",
                     "version": "0.1.0",
                 ],
             ],
