@@ -4,7 +4,7 @@ set -euo pipefail
 script_dir="${0:A:h}"
 project_root="${script_dir:h}"
 product_name="CodexQuota"
-app_name="Codex Quota.app"
+app_name="Tokivue.app"
 dist_dir="$project_root/dist"
 app_dir="$dist_dir/$app_name"
 
