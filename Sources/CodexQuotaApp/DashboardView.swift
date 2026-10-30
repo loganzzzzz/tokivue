@@ -48,7 +48,7 @@ struct DashboardView: View {
         let stale = data?.isStale(at: now) ?? true
         return VStack(spacing: 10) {
             HStack(alignment: .center) {
-                Text("Codex 用量").font(.system(size: 17, weight: .semibold))
+                Text("Tokivue").font(.system(size: 17, weight: .semibold))
                 Spacer()
                 HStack(spacing: 4) {
                     Circle().fill(model.error != nil || stale ? Color.orange : Color.green).frame(width: 5, height: 5)

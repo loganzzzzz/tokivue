@@ -26,7 +26,7 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
             button.target = self
             button.action = #selector(toggleCard(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            button.setAccessibilityLabel("Codex Google Sheets 用量看板")
+            button.setAccessibilityLabel("Tokivue Google Sheets 用量看板")
         }
         model.refresh = { [weak self] in self?.refresh() }
         model.reconnect = { [weak self] in self?.reconnect() }
