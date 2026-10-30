@@ -36,6 +36,7 @@ Luna 与自动审核保留 Tokens，但默认排除美元估值。价格为 Stan
 
 ```sh
 python3 collector/install_macos.py
+chmod +x scripts/*.sh
 ./scripts/build-app.sh
 open "dist/Codex Quota.app"
 ```
