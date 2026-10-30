@@ -1,6 +1,8 @@
-# Codex Usage Monitor
+# Tokivue — Codex 多设备用量与额度看板
 
-本地用量采集器、Google Sheets 汇总接收端和 macOS 原生菜单栏看板。
+Tokivue 将本地用量采集器、Google Sheets 汇总接收端和 macOS 原生菜单栏看板连接起来，让每一份 AI 用量看得见。
+
+项目仓库：[loganzzzzz/tokivue](https://github.com/loganzzzzz/tokivue)。
 
 ## 界面预览
 
@@ -162,7 +164,7 @@ new Set(['gpt-5.6-luna', 'gpt-6-luna', 'codex-auto-review'])
 python3 collector/install_macos.py
 chmod +x scripts/*.sh
 ./scripts/build-app.sh
-open "dist/Codex Quota.app"
+open "dist/Tokivue.app"
 ```
 
 可用 `./scripts/install-chatgpt-autostart.sh` 安装到用户 Applications 并启用 ChatGPT 联动启动。
@@ -194,3 +196,7 @@ Python 与接收端测试使用合成数据，不需要真实 Google 或 Codex �
 官方周额度由最新账号快照决定，不把多设备百分比相加。菜单栏每 60 秒刷新的是服务器汇总；不代表采集器每分钟获取额度，因此会有最多一个采集周期的延迟。未接入设备、云端任务、删除的日志及缺少可解析事件的旧版生图可能不在统计内。
 
 本仓库不包含私人部署地址、账号指纹、配置、数据库、实际用量截图或运行日志。部署和使用者自行保管本地 `~/.codex-usage-monitor` 目录。
+
+## 从旧名称升级
+
+应用已从 Codex Quota 更名为 Tokivue。运行安装脚本会将旧应用移入本地备份并更新启动路径。为兼容已有安装，内部 Bundle ID、采集任务标识、Swift target 和 `~/.codex-usage-monitor` 数据目录保留原名；不需要重新配对 Google Sheets，也不要清空数据库。
