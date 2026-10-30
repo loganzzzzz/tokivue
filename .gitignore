@@ -1,0 +1,14 @@
+.DS_Store
+.build/
+dist/
+__pycache__/
+*.pyc
+*.log
+*.sqlite*
+.env*
+config.json
+connection.private.json
+latest.json
+menubar-dashboard.json
+*verification.json
+*.zip
