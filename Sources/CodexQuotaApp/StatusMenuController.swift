@@ -10,6 +10,8 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
     private var client = SheetsDashboardClient()
     private var timer: Timer?
     private var dismissTimer: Timer?
+    private var outsideClickMonitor: Any?
+    private var localClickMonitor: Any?
     private var refreshGeneration = 0
     private var stopped = false
 
@@ -52,6 +54,7 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
         timer?.invalidate()
         cancelAutoDismiss()
         client.stop()
+        stopOutsideClickMonitoring()
         popover.close()
     }
 
@@ -63,6 +66,7 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidShow(_ notification: Notification) {
+        startOutsideClickMonitoring()
         cancelAutoDismiss()
         let timer = Timer(timeInterval: 30, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -76,7 +80,43 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        stopOutsideClickMonitoring()
         cancelAutoDismiss()
+    }
+
+    private func startOutsideClickMonitoring() {
+        stopOutsideClickMonitoring()
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        // A non-activating menu-bar popover can miss AppKit's transient dismissal.
+        // Global monitors observe other apps; local monitors cover our own windows.
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.popover.isShown else { return }
+                self.popover.performClose(nil)
+            }
+        }
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, self.popover.isShown else { return }
+                if let window = self.popover.contentViewController?.view.window,
+                   event.window === window { return }
+                // Let the status button's mouse-up action toggle the card once.
+                if let button = self.statusItem.button, let window = button.window,
+                   event.window === window,
+                   button.bounds.contains(button.convert(event.locationInWindow, from: nil)) {
+                    return
+                }
+                self.popover.performClose(nil)
+            }
+            return event // Never swallow the click intended for another control.
+        }
+    }
+
+    private func stopOutsideClickMonitoring() {
+        if let monitor = outsideClickMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = localClickMonitor { NSEvent.removeMonitor(monitor) }
+        outsideClickMonitor = nil
+        localClickMonitor = nil
     }
 
     private func cancelAutoDismiss() {
