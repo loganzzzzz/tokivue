@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent
 STATE = Path(os.environ.get('CODEX_MONITOR_HOME', Path.home() / '.codex-usage-monitor'))
 KEYS = ('input_tokens', 'cached_input_tokens', 'cache_write_input_tokens',
         'output_tokens', 'reasoning_output_tokens', 'total_tokens')
-COLLECTOR_REVISION = '3-image-generation-counts'
+COLLECTOR_REVISION = '4-service-tiers-forward'
 
 
 def utcnow():
@@ -238,13 +238,36 @@ def usage_event(timestamp, usage, event_id, state, config, **extra):
     if day < config['start_date']:
         return None
     return dict(id=event_id, timestamp=timestamp, day=day,
-                model=state.get('model', 'unknown'), **delta, **extra)
+                model=state.get('model', 'unknown'),
+                service_tier=state.get('service_tier', 'unknown'),
+                tier_source=state.get('tier_source', 'unknown'), **delta, **extra)
+
+
+def normalize_tier(value):
+    return {'default': 'standard', 'standard': 'standard', 'priority': 'fast',
+            'fast': 'fast', 'ultrafast': 'ultrafast'}.get(value, 'unknown')
 
 
 def token_event(entry, state, config):
     payload = entry.get('payload') or {}
+    if entry.get('type') == 'event_msg' and payload.get('type') == 'thread_settings_applied':
+        settings = payload.get('thread_settings') or {}
+        state['tier_settings'] = {'model': settings.get('model'), 'tier': settings.get('service_tier')}
+        if settings.get('model') == state.get('model'):
+            state['service_tier'] = normalize_tier(settings.get('service_tier'))
+            state['tier_source'] = 'thread_settings'
+        return None
     if entry.get('type') == 'turn_context':
         state['model'] = payload.get('model', 'unknown')
+        settings = state.get('tier_settings') or {}
+        if 'service_tier' in payload:
+            state['service_tier'] = normalize_tier(payload.get('service_tier'))
+            state['tier_source'] = 'turn_context'
+        elif settings.get('model') == state['model']:
+            state['service_tier'] = normalize_tier(settings.get('tier'))
+            state['tier_source'] = 'thread_settings'
+        else:
+            state['service_tier'], state['tier_source'] = 'unknown', 'unknown'
         return None
     if entry.get('type') == 'token_usage_record':
         # Normal requests also emit token_count. Do not add these two streams.
@@ -329,9 +352,15 @@ def scan(db, config):
     added = 0
     bad_lines = 0
     home = Path(config['codex_home'])
+    # Persist the rollout boundary before scanning. Old/late-discovered logs never
+    # acquire Fast surcharges, including after archive moves or file rotation.
+    with db:
+        db.execute("INSERT OR IGNORE INTO meta VALUES('service_tiers_since',?)", (utcnow().isoformat(),))
+    tier_since = dt.datetime.fromisoformat(db.execute(
+        "SELECT value FROM meta WHERE key='service_tiers_since'").fetchone()[0])
     revision = db.execute("SELECT value FROM meta WHERE key='collector_revision'").fetchone()
     if not revision or revision[0] != COLLECTOR_REVISION:
-        # Re-read existing logs once to backfill compression since start_date.
+        # Re-read context once to recover tier settings for subsequent new events.
         # Preserve event IDs and upload acknowledgments, including older clients' IDs.
         with db:
             db.execute('DELETE FROM files')
@@ -353,7 +382,7 @@ def scan(db, config):
                     offset = stream.tell()
                     if not any(marker in line for marker in
                                (b'"token_count"', b'"turn_context"', b'"compacted"', b'"token_usage_record"',
-                                b'"image_gen.generation"')):
+                                b'"image_gen.generation"', b'"thread_settings_applied"')):
                         continue
                     try:
                         entry = json.loads(line)
@@ -366,6 +395,9 @@ def scan(db, config):
                         bad_lines += 1
                         continue
                     if event:
+                        timestamp = dt.datetime.fromisoformat(event['timestamp'].replace('Z', '+00:00'))
+                        if timestamp < tier_since:
+                            event['service_tier'], event['tier_source'] = 'unknown', 'unknown'
                         result = db.execute('INSERT OR IGNORE INTO events(id,timestamp,day,model,data) VALUES(?,?,?,?,?)',
                                             (event['id'], event['timestamp'], event['day'], event['model'], json.dumps(event)))
                         added += result.rowcount
@@ -404,6 +436,8 @@ def upload(db, config):
         request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(request, timeout=60) as response:
             ack = json.load(response)
+        if any(e.get('service_tier', 'unknown') != 'unknown' for e in payload['events']) and ack.get('pricing_schema') != 2:
+            raise RuntimeError('Receiver upgrade required for service-tier metadata; data retained for retry')
         expected = {r[0] for r in events + snapshots + images}
         if ack.get('ok') is not True or set(ack.get('ack_ids', [])) != expected:
             raise RuntimeError('Upload not acknowledged; data retained for retry')

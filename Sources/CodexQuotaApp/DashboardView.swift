@@ -7,6 +7,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var dashboard: SheetsDashboard?
     @Published var error: String?
     @Published var refreshing = false
+    @Published var showsModelRankings = false
     @Published var fetchedAt: Date?
     @Published var nextRefreshAt: Date?
     var refresh: () -> Void = {}
@@ -35,7 +36,7 @@ struct DashboardView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            card(now: context.date)
+            if model.showsModelRankings { rankingCard() } else { card(now: context.date) }
         }
         .frame(width: 344)
         .background(ControlCenterMaterial())
@@ -148,6 +149,11 @@ struct DashboardView: View {
                 Text("等待采集器首次上传").font(.system(size: 10)).foregroundColor(muted)
             }
 
+            Button { model.showsModelRankings = true } label: {
+                HStack { Label("最近 7 天模型消耗榜", systemImage: "chart.bar.xaxis"); Spacer(); Image(systemName: "chevron.right") }
+                    .font(.system(size: 11, weight: .medium)).padding(11)
+            }.buttonStyle(ControlCenterButtonStyle())
+
             HStack(spacing: 8) {
                 Button(action: model.refresh) {
                     Label(model.refreshing ? "刷新中…" : "刷新看板", systemImage: "arrow.clockwise")
@@ -163,7 +169,7 @@ struct DashboardView: View {
             }
             VStack(spacing: 3) {
                 Text("按模型分别估值 · 非订阅余额")
-                    .help("按 Prices 表中的各模型 Standard 短上下文价格计算：Sol 使用 Sol 单价，Astra 使用 Astra 单价。")
+                    .help("按模型和已记录的加速档位估值；缺少档位的历史记录按 Standard 暂估。")
                 Text("估值未含 Luna、自动审核；生图仅估输出成本")
                 Text(model.refreshing ? "正在同步 Google Sheets" : model.error != nil
                      ? "\(refreshCountdown(now)) 秒后自动重试"
@@ -172,6 +178,47 @@ struct DashboardView: View {
         }
         .padding(14)
         .foregroundColor(ink)
+    }
+
+    private func rankingCard() -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button { model.showsModelRankings = false } label: { Label("返回", systemImage: "chevron.left") }.buttonStyle(ControlCenterButtonStyle())
+                Spacer()
+                Text("模型消耗榜").font(.system(size: 17, weight: .semibold))
+                Spacer()
+                Button(action: model.refresh) { Image(systemName: "arrow.clockwise") }.disabled(model.refreshing).buttonStyle(ControlCenterButtonStyle())
+            }
+            Text("最近 7 天 · 全部已接入设备 · 按总 Tokens 排序").font(.system(size: 10)).foregroundColor(muted)
+            if let rankings = model.dashboard?.model_rankings {
+                Text("总计 \(tokens(rankings.total_tokens)) Tokens").font(.system(size: 23, weight: .semibold, design: .rounded))
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(Array(rankings.models.enumerated()), id: \.element.id) { index, item in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack { Text("\(index + 1)").foregroundColor(blue); Text(item.model).lineLimit(1).minimumScaleFactor(0.7); Spacer(); Text(tokens(item.total_tokens)).monospacedDigit() }.font(.system(size: 12, weight: .semibold))
+                                ProgressView(value: min(1, max(0, item.share))).tint(blue)
+                                HStack { Text(String(format: "占比 %.1f%%", item.share * 100)); Spacer(); Text(item.excluded ? "估值已排除" : item.cost.map { String(format: "$%.2f", $0) } ?? "待计价") }.font(.system(size: 10)).foregroundColor(muted)
+                                if item.fast_tokens + item.ultrafast_tokens > 0 {
+                                    Text("Fast \(tokens(item.fast_tokens)) · Ultrafast \(tokens(item.ultrafast_tokens)) Tokens").font(.system(size: 9)).foregroundColor(muted)
+                                    Text(item.extra_cost.map { String(format: "加速额外估值 $%.2f", $0) } ?? "加速估值待确认").font(.system(size: 10)).foregroundColor(blue)
+                                }
+                                if item.unknown_tier_tokens > 0 { Text("\(tokens(item.unknown_tier_tokens)) Tokens 档位未知，按 Standard 暂估").font(.system(size: 9)).foregroundColor(.orange) }
+                            }.padding(12).module()
+                        }
+                    }
+                }.frame(height: 400)
+                if rankings.models.isEmpty { Text("最近 7 天暂无已采集记录").font(.system(size: 12)).foregroundColor(muted) }
+                Text("截止 " + rankings.to.replacingOccurrences(of: "T", with: " ").prefix(19) + " UTC").font(.system(size: 9)).foregroundColor(muted)
+            } else {
+                Text("接收端升级后即可显示模型周榜。").font(.system(size: 13))
+                Text("本地应用已就绪，请按部署说明更新 Apps Script 接收端。").font(.system(size: 11)).foregroundColor(muted)
+                Spacer()
+                Button("打开 Google Sheets", action: model.openSheet)
+            }
+            if model.error != nil { Text("离线缓存：榜单可能不是最新数据").font(.system(size: 10)).foregroundColor(.orange) }
+            Text("金额为 API 等价估值；生图次数与图片输出估值单独统计。").font(.system(size: 9)).foregroundColor(muted)
+        }.padding(14).frame(height: 590).foregroundColor(ink)
     }
 
     private func statistic(icon: String, title: String, value: String) -> some View {

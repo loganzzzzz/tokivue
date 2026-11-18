@@ -25,6 +25,17 @@ private func parse(_ json: String) throws -> QuotaSnapshot {
 }
 
 private let tests: [(String, () throws -> Void)] = [
+    ("模型周榜支持可选升级、排除金额与未知档位", {
+        let old = try SheetsDashboardClient.parse(Data("{\"ok\":true,\"ack_ids\":[],\"dashboard\":{\"empty\":false}}".utf8))
+        try expectNil(old.model_rankings)
+        let json = """
+        {"ok":true,"ack_ids":[],"dashboard":{"empty":false,"model_rankings":{"from":"2026-11-11T00:00:00Z","to":"2026-11-18T00:00:00Z","total_tokens":100,"models":[{"model":"gpt-6.2-astra","total_tokens":100,"share":1,"cost":1.2,"extra_cost":0.6,"fast_tokens":80,"ultrafast_tokens":0,"unknown_tier_tokens":20,"excluded":false}]}}}
+        """
+        let ranked = try SheetsDashboardClient.parse(Data(json.utf8))
+        try expect(ranked.model_rankings?.models.first?.fast_tokens,80)
+        try expect(ranked.model_rankings?.models.first?.extra_cost,0.6)
+        try expect(ranked.model_rankings?.total_tokens,100)
+    }),
     ("表格地址来自本地配置且仅接受 Google Sheets HTTPS", {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

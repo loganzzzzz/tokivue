@@ -49,7 +49,7 @@
       "source": "https://developers.openai.com/api/docs/models/gpt-6.2-sol"
     }
   },
-  "scope": "Exact model matching at Standard short-context rates, with 30-minute cache writes. Both Luna versions and codex-auto-review are excluded from USD estimates; tokens remain included. Other unmapped models stay unpriced. Does not model long context, Fast/Ultrafast, Batch/Flex, background discounts, regional uplifts or 12-hour cache retention. Image generation output estimates are handled separately using image_output_estimate; image input costs are excluded.",
+  "scope": "Standard short-context baseline with 30-minute cache writes. Optional automatic Standard/Fast updates are implemented in AutoPricing.gs. Known Fast/Ultrafast settings produce estimated surcharges; historical unknown tiers retain a disclosed Standard estimate. Luna and auto-review remain excluded. Image output estimates remain separate. Long context, regional processing and 12-hour caches are not modeled. Tier tracking starts on each device first upgraded scan; historical Fast is not backfilled. Fast requires independent FastPrices rates with no fixed-multiplier fallback.",
   "implemented_in": "Runtime: Google Sheets Prices!A:G. Formula-based deployments may use J2:P7 with B2:G2 lookup arrays. Image output is estimated by the receiver; this JSON is reference data, not automatic configuration.",
   "excluded_from_cost": [
     "gpt-5.6-luna",
@@ -68,5 +68,17 @@
     "calculator_script_sha256": "3e8523c067cb199fc496cc81790113def372dbf66af165b8e9039fe747e48099"
   },
   "updated_on": "2026-11-18",
-  "cache_write_retention": "30 minutes"
+  "cache_write_retention": "30 minutes",
+  "auto_update": {
+    "source": "https://developers.openai.com/api/docs/pricing.md",
+    "interval_hours": 6,
+    "tiers": [
+      "Standard",
+      "Fast"
+    ],
+    "enabled_by_default": false,
+    "activation": "enableTokivueAutomation()",
+    "manual_prices": "preserve edits since last managed price",
+    "log_sheet": "PriceUpdateLog"
+  }
 }

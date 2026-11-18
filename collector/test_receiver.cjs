@@ -213,3 +213,39 @@ for (const [model,expected] of [['gpt-6.2-astra',9.16],['gpt-6.2-sol',2.29]]) {
   assert.ok(Math.abs(deviceRead(device).current_device_cost-after62.current_device_cost)<1e-10);
 }
 console.log('GPT-6.2 Astra/Sol reference prices, historical repricing and dedup passed.');
+
+// Tier metadata enriches existing events without changing their token/device identity.
+context.SpreadsheetApp.openById=()=>({getSheetByName:n=>tables[n],insertSheet:n=>{
+  const sheet=new Sheet([]);sheet.setFrozenRows=()=>{};tables[n]=sheet;return sheet;
+}});
+const tierEvent={...astra,model:'gpt-6.2-astra',id:'tier-enrichment-example',timestamp:'2026-11-18T02:00:00Z'};
+assert.equal(send({...body,events:[tierEvent],snapshots:[]}).ok,true);
+tables.FastPrices=new Sheet(['model','input','cached','output','write','source','date']);
+tables.FastPrices.rows.push(['gpt-6.2-astra',16,.8,80,20]);
+const baselineTier=deviceRead(device),countBeforeTier=tables.TokenEvents.rows.length;
+const enriched={...tierEvent,service_tier:'fast',tier_source:'thread_settings'};
+const tierReply=send({...body,device_id:'device-456',events:[enriched],snapshots:[]});assert.equal(tierReply.ok,true);assert.equal(tierReply.pricing_schema,2);
+assert.equal(tables.TokenEvents.rows.length,countBeforeTier);assert.equal(tables.TokenEvents.rows.find(r=>r[0]===tierEvent.id)[2],device);
+assert.ok(Math.abs(deviceRead(device).current_device_cost-baselineTier.current_device_cost-9.16)<1e-9);
+assert.equal(send({...body,events:[enriched],snapshots:[]}).ok,true);assert.equal(tables.EventTiers.rows.length,2);
+const countValid=tables.TokenEvents.rows.length;assert.equal(send({...body,events:[{...enriched,id:'invalid-tier',service_tier:'invented'}],snapshots:[]}).ok,false);assert.equal(tables.TokenEvents.rows.length,countValid);
+const priceMap=new Map(tables.Prices.rows.slice(1).map(r=>[r[0],r])),tierMap=new Map([[enriched.id,'fast']]);
+const baseRow=tables.TokenEvents.rows.find(r=>r[0]===enriched.id);
+assert.equal(context.eventEstimate_(baseRow,priceMap,new Map(),tierMap).cost,null);
+const officialFast=new Map([['gpt-6.2-astra',['gpt-6.2-astra',16,.8,80,20]]]);
+assert.ok(Math.abs(context.eventEstimate_(baseRow,priceMap,officialFast,tierMap).cost-18.32)<1e-10);
+const customFast=new Map([['gpt-6.2-astra',['gpt-6.2-astra',24,1.2,120,30]]]);
+assert.ok(Math.abs(context.eventEstimate_(baseRow,priceMap,customFast,tierMap).cost-27.48)<1e-10);
+tierMap.set(enriched.id,'ultrafast');assert.ok(Math.abs(context.eventEstimate_(baseRow,priceMap,new Map(),tierMap).cost-27.48)<1e-10);
+const postPromo=[...baseRow];postPromo[3]='2027-03-01T08:00:00Z';assert.ok(Math.abs(context.eventEstimate_(postPromo,priceMap,new Map(),tierMap).cost-54.96)<1e-10);
+const beforePromo=[...postPromo];beforePromo[3]='2027-03-01T07:59:59Z';assert.ok(Math.abs(context.eventEstimate_(beforePromo,priceMap,new Map(),tierMap).cost-27.48)<1e-10);
+const row=(id,model,date)=>{const r=[...baseRow];r[0]=id;r[5]=model;r[3]=date;return r;};
+const ranked=context.modelRankings_([
+ row('rank-start','gpt-6.2-astra','2026-11-11T12:00:00Z'),row('rank-fast','gpt-6.2-astra','2026-11-18T11:00:00Z'),
+ row('rank-sol','gpt-6.2-sol','2026-11-18T11:00:00Z'),row('rank-luna','gpt-6-luna','2026-11-18T11:00:00Z'),
+ row('before-start','gpt-6.2-astra','2026-11-11T11:59:59Z'),row('future','gpt-6.2-astra','2026-11-18T12:00:01Z')
+],priceMap,officialFast,new Map([['rank-fast','fast'],['rank-sol','standard']]),new Date('2026-11-18T12:00:00Z'));
+assert.equal(ranked.total_tokens,4400000);assert.equal(ranked.models[0].model,'gpt-6.2-astra');assert.equal(ranked.models[0].share,.5);assert.equal(ranked.models[0].unknown_tier_tokens,1100000);
+assert.ok(Math.abs(ranked.models[0].extra_cost-9.16)<1e-10);assert.equal(ranked.models.find(r=>r.model==='gpt-6-luna').cost,null);
+assert.equal(context.modelRankings_([],priceMap,new Map(),new Map(),new Date()).total_tokens,0);
+console.log('Rolling model rankings, tier enrichment, Fast/Ultrafast estimates, promo boundary and excluded-model counts passed.');

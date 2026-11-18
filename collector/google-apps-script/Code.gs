@@ -172,6 +172,8 @@ function doPost(e) {
         (input.image_events !== undefined && (!Array.isArray(input.image_events) || input.image_events.length>100))) throw new Error('invalid batch');
     const device = id_(input.device_id), account = id_(input.account_key), name = text_(input.device_name,128);
     const eventRows = input.events.map(row => {
+      if(row.service_tier && !['unknown','standard','fast','ultrafast'].includes(row.service_tier))throw new Error('invalid tier');
+      if(row.service_tier && row.service_tier!=='unknown' && !['thread_settings','turn_context'].includes(row.tier_source))throw new Error('invalid tier source');
       const timestamp = timestamp_(row.timestamp);
       const day = Utilities.formatDate(new Date(timestamp),'Asia/Shanghai','yyyy-MM-dd');
       return [id_(row.id),account,device,timestamp,day,text_(row.model,128),
@@ -203,12 +205,13 @@ function doPost(e) {
     const ss = SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
     // Both tables use persistent IDs: partial writes and lost HTTP responses are safe to retry.
     uniqueRows_(ss.getSheetByName('TokenEvents'),eventRows);
+    storeEventTiers_(ss,eventRows,input.events);
     uniqueRows_(ss.getSheetByName('QuotaSnapshots'),snapshotRows);
     if(imageRows.length) uniqueRows_(ss.getSheetByName('ImageEvents'),imageRows);
     const dashboard = refreshOverview_(ss, device) || getDashboardData(device);
     SpreadsheetApp.flush();
     // Only the authenticated account's upload clients receive this aggregate; GET stays non-sensitive.
-    return json_({ok:true,ack_ids:[...eventRows,...snapshotRows,...imageRows].map(row=>row[0]),dashboard});
+    return json_({ok:true,pricing_schema:2,ack_ids:[...eventRows,...snapshotRows,...imageRows].map(row=>row[0]),dashboard});
   } catch (_) {
     return json_({ok:false,error:'ingest_failed'});
   } finally { if (lock && lock.hasLock()) lock.releaseLock(); }
@@ -227,6 +230,9 @@ function getDashboardData(currentDeviceId = null) {
   const today = Utilities.formatDate(new Date(),'Asia/Shanghai','yyyy-MM-dd');
   const events = readRows_(ss.getSheetByName('TokenEvents'));
   const prices = new Map(readRows_(ss.getSheetByName('Prices')).map(r=>[r[0],r]));
+  const fastPrices=new Map(readOptionalRows_(ss,'FastPrices').map(r=>[r[0],r]));
+  const tiers=new Map(readOptionalRows_(ss,'EventTiers').map(r=>[r[0],r[1]]));
+  const modelRankings=modelRankings_(events,prices,fastPrices,tiers,new Date());
   let totalCost=0, windowCost=0, totalMissing=0, windowMissing=0;
   let deviceCost=0, deviceMissing=0, deviceWindowCost=0, deviceWindowMissing=0;
   const start = quota && quota.resets_at ? quota.resets_at*1000 - quota.duration_minutes*60000 : null;
@@ -247,15 +253,13 @@ function getDashboardData(currentDeviceId = null) {
     if(r[2]===currentDeviceId) {deviceCost+=estimate.cost;if(inWindow)deviceWindowCost+=estimate.cost;}
   });
   events.forEach(r=> {
-    if (EXCLUDED_COST_MODELS.has(r[5])) return;
-    const p=prices.get(r[5]);
+    if (excludedCostModel_(r[5])) return;
+    const estimate=eventEstimate_(r,prices,fastPrices,tiers);
     const inWindow = start !== null && Date.parse(r[3]) >= start && Date.parse(r[3]) < end;
     // Deduplicated events retain their first uploading device's attribution.
     const onDevice = currentDeviceId !== null && r[2] === currentDeviceId;
-    const valid = p && p.slice(1,4).every(v=>typeof v==='number' && Number.isFinite(v) && v>=0) &&
-      (r[8]===0 || (typeof p[4]==='number' && Number.isFinite(p[4]) && p[4]>=0)) && r[6]>=r[7]+r[8];
-    if (!valid) { totalMissing++; if(inWindow)windowMissing++; if(onDevice)deviceMissing++; if(onDevice && inWindow)deviceWindowMissing++; return; }
-    const cost=((r[6]-r[7]-r[8])*p[1] + r[7]*p[2] + r[9]*p[3] + r[8]*(p[4]||0))/1e6;
+    if (estimate.cost===null) { totalMissing++; if(inWindow)windowMissing++; if(onDevice)deviceMissing++; if(onDevice && inWindow)deviceWindowMissing++; return; }
+    const cost=estimate.cost;
     totalCost+=cost; if(inWindow)windowCost+=cost;
     if(onDevice)deviceCost+=cost;
     if(onDevice && inWindow)deviceWindowCost+=cost;
@@ -268,13 +272,14 @@ function getDashboardData(currentDeviceId = null) {
     account_lifetime_tokens:newest.account_lifetime_tokens,
     total_cost:(!events.length && !imageRows.length) || totalMissing ? null : totalCost,
     image_stats:imageStats,
+    model_rankings:modelRankings,
     current_device_id:currentDeviceId,
     current_device_cost:currentDeviceId === null || deviceMissing ? null : deviceCost,
     current_device_window_cost:currentDeviceId === null || start === null || deviceWindowMissing ? null : deviceWindowCost,
     window_cost:start===null || windowMissing || (!events.length && !imageRows.length) ? null : windowCost,
     missing_prices:totalMissing,
     excluded_cost_models:[...EXCLUDED_COST_MODELS],
-    excluded_cost_events:events.filter(r=>EXCLUDED_COST_MODELS.has(r[5])).length,
+    excluded_cost_events:events.filter(r=>excludedCostModel_(r[5])).length,
     devices:[...devices.values()]};
 }
 
@@ -339,6 +344,7 @@ function refreshOverview_(ss, currentDeviceId = null) {
       [selected.current_device_cost == null ? '' : selected.current_device_cost]
     ]);
   }
+  if(ss.getSheetByName('模型周榜')) writeModelRankings_(ss.getSheetByName('模型周榜'),d.model_rankings);
   return d;
 }
 
@@ -390,3 +396,92 @@ function syncLightOverview() {
   refreshOverview_(ss,selectedDevice);
   SpreadsheetApp.flush();
 }
+
+
+function readOptionalRows_(ss,name) {const sheet=ss.getSheetByName(name);return sheet ? readRows_(sheet):[];}
+
+function storeEventTiers_(ss,rows,events) {
+  const known=events.filter(e=>e.service_tier && e.service_tier!=='unknown');
+  if(!known.length)return;
+  const allowed=new Set(['standard','fast','ultrafast']);
+  const sources=new Set(['thread_settings','turn_context']);
+  known.forEach(e=>{if(!allowed.has(e.service_tier)||!sources.has(e.tier_source))throw new Error('invalid service tier');});
+  const stored=new Map(readRows_(ss.getSheetByName('TokenEvents')).map(r=>[r[0],r]));
+  const provided=new Map(rows.map(r=>[r[0],r]));
+  known.forEach(e=>{const a=stored.get(e.id),b=provided.get(e.id);if(!a || [0,1,3,4,5,6,7,8,9,10,11].some(i=>a[i]!==b[i]))throw new Error('tier event mismatch');});
+  let sheet=ss.getSheetByName('EventTiers');
+  if(!sheet){sheet=ss.insertSheet('EventTiers');sheet.getRange(1,1,1,3).setValues([['event_id','service_tier','tier_source']]);sheet.setFrozenRows(1);}
+  if(JSON.stringify(sheet.getRange(1,1,1,3).getValues()[0])!==JSON.stringify(['event_id','service_tier','tier_source']))throw new Error('tier schema mismatch');
+  // Stable event IDs: enrichment never adds TokenEvents or changes first-device attribution.
+  uniqueRows_(sheet,known.map(e=>[e.id,e.service_tier,e.tier_source]));
+}
+
+function rowCost_(r,p) {
+  if(!p || !p.slice(1,4).every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0) ||
+     (r[8]!==0 && !(typeof p[4]==='number'&&Number.isFinite(p[4])&&p[4]>=0)) || r[6]<r[7]+r[8])return null;
+  return ((r[6]-r[7]-r[8])*p[1]+r[7]*p[2]+r[9]*p[3]+r[8]*(p[4]||0))/1e6;
+}
+
+function eventEstimate_(r,prices,fastPrices,tiers) {
+  if(excludedCostModel_(r[5]))return {cost:0,extra:0,excluded:true,unknown:false};
+  const base=rowCost_(r,prices.get(r[5]));
+  if(base===null)return {cost:null,extra:null,excluded:false,unknown:!tiers.has(r[0])};
+  const tier=tiers.get(r[0]);
+  if(tier==='standard')return {cost:base,extra:0,excluded:false,unknown:false};
+  if(tier==='fast') {
+    // Fast is independently priced; missing official/custom rates stay unpriced.
+    const cost=rowCost_(r,fastPrices.get(r[5]));
+    return {cost,extra:cost===null?null:cost-base,excluded:false,unknown:cost===null};
+  }
+  if(tier==='ultrafast') {
+    let multiplier=null;
+    if(['gpt-6.2-astra','gpt-6.2-sol'].includes(r[5]))multiplier=Date.parse(r[3])<Date.parse('2027-03-01T08:00:00Z')?3:6;
+    if(['gpt-6-astra','gpt-6.1-sol'].includes(r[5]))multiplier=6;
+    const cost=multiplier===null?null:base*multiplier;
+    return {cost,extra:cost===null?null:cost-base,excluded:false,unknown:cost===null};
+  }
+  // Missing historical tier remains a disclosed Standard estimate, never invented Fast usage.
+  return {cost:base,extra:0,excluded:false,unknown:true};
+}
+
+function modelRankings_(events,prices,fastPrices,tiers,now) {
+  const end=now.getTime(),start=end-7*86400000,map=new Map();
+  for(const r of events) {
+    const time=Date.parse(r[3]);if(time<start||time>end||!Number.isFinite(time))continue;
+    if(!map.has(r[5]))map.set(r[5],{model:r[5],total_tokens:0,input_tokens:0,output_tokens:0,events:0,cost:0,extra_cost:0,fast_tokens:0,ultrafast_tokens:0,unknown_tier_tokens:0,excluded:excludedCostModel_(r[5]),missing_prices:0});
+    const item=map.get(r[5]),estimate=eventEstimate_(r,prices,fastPrices,tiers);
+    item.total_tokens+=r[11];item.input_tokens+=r[6];item.output_tokens+=r[9];item.events++;
+    if(tiers.get(r[0])==='fast')item.fast_tokens+=r[11];
+    if(tiers.get(r[0])==='ultrafast')item.ultrafast_tokens+=r[11];
+    if(estimate.unknown)item.unknown_tier_tokens+=r[11];
+    if(estimate.cost===null)item.missing_prices++;else {item.cost+=estimate.cost;item.extra_cost+=estimate.extra;}
+  }
+  const models=[...map.values()].sort((a,b)=>b.total_tokens-a.total_tokens||a.model.localeCompare(b.model));
+  const total=models.reduce((n,r)=>n+r.total_tokens,0);
+  models.forEach(r=>{r.share=total?r.total_tokens/total:0;if(r.missing_prices || r.excluded){r.cost=null;r.extra_cost=null;}});
+  return {from:new Date(start).toISOString(),to:now.toISOString(),total_tokens:total,models};
+}
+
+function enableModelRankings() {
+  const lock=LockService.getScriptLock();lock.waitLock(25000);
+  try {
+    const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'));
+    let sheet=ss.getSheetByName('模型周榜');if(!sheet)sheet=ss.insertSheet('模型周榜');
+    if(sheet.getLastRow() && sheet.getRange(1,1).getValue()!=='Tokivue · 最近 7 天模型消耗榜')throw new Error('Existing ranking sheet is not owned by Tokivue');
+    const data=getDashboardData();if(data.empty)throw new Error('Upload a quota snapshot first');
+    writeModelRankings_(sheet,data.model_rankings);
+  } finally {lock.releaseLock();}
+}
+
+function writeModelRankings_(sheet,data) {
+  sheet.getRange('A1:J1').merge().setValue('Tokivue · 最近 7 天模型消耗榜').setFontSize(16).setFontWeight('bold');
+  sheet.getRange('A2:J2').merge().setValue('滚动 7 天 · 全部已接入设备 · 按总 Tokens 降序；档位未知部分按 Standard 暂估；生图单独统计');
+  sheet.getRange('A3:J3').merge().setValue(data.from+' 至 '+data.to+' (UTC)');
+  sheet.getRange(4,1,1,10).setValues([['排名','模型','总 Tokens','占比','输入 Tokens','输出 Tokens','Fast Tokens','Ultrafast Tokens','估值 USD','加速额外估值 USD']]).setFontWeight('bold').setBackground('#e8eef8');
+  if(sheet.getLastRow()>4)sheet.getRange(5,1,sheet.getLastRow()-4,10).clearContent();
+  const rows=data.models.map((r,i)=>[i+1,r.model,r.total_tokens,r.share,r.input_tokens,r.output_tokens,r.fast_tokens,r.ultrafast_tokens,r.excluded?'已排除':r.cost===null?'待计价':r.cost,r.excluded?'已排除':r.extra_cost===null?'待计价':r.extra_cost]);
+  if(rows.length)sheet.getRange(5,1,rows.length,10).setValues(rows);
+  sheet.setFrozenRows(4);sheet.setColumnWidth(2,190);sheet.setColumnWidths(3,8,150);sheet.getRange('C5:C').setNumberFormat('#,##0');sheet.getRange('D5:D').setNumberFormat('0.0%');sheet.getRange('E5:H').setNumberFormat('#,##0');sheet.getRange('I5:J').setNumberFormat('$0.00');
+}
+
+function excludedCostModel_(model) { return EXCLUDED_COST_MODELS.has(model) || /^gpt-[0-9.]+-luna(?:-|$)/.test(model); }

@@ -28,6 +28,20 @@ Tokivue 将本地用量采集器、Google Sheets 汇总接收端和 macOS 原生
 
 <img src="docs/images/sheets-dashboard.png" alt="Google Sheets 浅色用量看板布局示意，使用虚构示例数据" width="500" />
 
+## 0.4 新功能
+
+- **自动检查官网价格**：云端约每 6 小时检查 Standard/Fast 价格，加入新模型并记录变更，保护手动改价。
+- **最近 7 天模型周榜**：跨设备去重，按总 Tokens 排序，展示模型占比与估值。
+- **Fast 额外估值**：读取可确认的日志档位，显示加速 Tokens 与相对 Standard 的额外金额；未知档位不猜测。
+
+需要一次云端升级及 Google 授权，详见 [0.4 升级与启用指南](docs/UPGRADE-0.4.md)。仅更新 GitHub 代码不会自动开启你私有表格的触发器。升级顺序：接收端 → Mac 界面 → 各设备采集器。
+
+### 模型周榜示意
+
+<img src="docs/images/model-rankings.png" alt="最近 7 天模型周榜，含 Fast 额外估值；虚构示例数据" width="344" />
+
+示意图使用虚构数据。Fast／Ultrafast Tokens 是实际 Tokens 中的档位分类，不会再乘倍率计入总 Tokens。
+
 ## 功能
 
 - macOS / Windows 定时读取本地 Codex 日志及只读账号额度接口，不启动模型任务。
@@ -54,7 +68,7 @@ Windows 包提供后台采集，不包含 macOS 菜单栏界面。
 9. 将部署地址和密钥填入本机配置的 `upload_url`、`upload_secret`，将表格 HTTPS 链接填入 `sheet_url`（macOS“打开表格”按钮使用）。再次运行采集确认上传。
 10. 要启用浅色三项估值看板：首次成功上传后，将 `QuotaSnapshots` 中目标设备的 `device_id` 填入“用量看板”K23，运行 `syncLightOverview()`，再运行 `enableImageGenerationStats()`。共享表格固定显示该设备；各 Mac 菜单栏按各自设备显示。
 
-Luna 与自动审核保留 Tokens，但默认排除美元估值。价格为 Standard 短上下文参考值，不含 Fast、区域附加费等。账号总估值为本窗口采集金额除以官方已用比例；已用 0%、数据过期或缺价时不估算。这不是订阅余额。
+Luna 与自动审核保留 Tokens，但默认排除美元估值。价格基准为 Standard 短上下文；0.4 可补充 Fast/Ultrafast 估值，区域附加费等仍未计入。账号总估值为本窗口采集金额除以官方已用比例；已用 0%、数据过期或缺价时不估算。这不是订阅余额。
 
 ## 估值与自定义模型价格
 
@@ -103,7 +117,7 @@ Luna 与自动审核保留 Tokens，但默认排除美元估值。价格为 Stan
 
 注意列顺序为 **输入、缓存读取、输出、缓存写入**。B、C、D 必须是非负数值；有缓存写入用量时 E 也必须有效。不要在单元格中填入 `$2/M` 之类的文本；填数字 `2`，再按需要设置数字格式。空白表示未知，明确填 `0` 则按零成本处理，不能用零掩盖未知价格。
 
-`collector/pricing-reference.json` 是带核实日期的参考记录，**修改该文件不会自动同步 Sheets**。本机 `config.json` 的 `prices_per_million` 字段也不参与当前 Sheets 看板计价。项目不自动抓取或更新官网价格；使用者需自行核对价格适用的模型、服务等级和上下文长度。
+`collector/pricing-reference.json` 是带核实日期的参考记录，**修改该文件不会自动同步 Sheets**。本机 `config.json` 的 `prices_per_million` 字段也不参与当前 Sheets 看板计价。0.4 起可按下方升级说明启用官方 Standard/Fast 价格自动检查；未启用时仍由使用者手动维护。
 
 ### GPT‑6.2 Astra / Sol 价格更新（2026-11-18）
 
@@ -129,7 +143,7 @@ gpt-6.2-astra	8	0.4	40	10	https://developers.openai.com/api/docs/pricing	2026-11
 gpt-6.2-sol	2	0.1	10	2.5	https://developers.openai.com/api/docs/pricing	2026-11-18
 ```
 
-价格表目前不按单次请求识别 Fast／Ultrafast、长上下文或 12 小时缓存保留等档位，因此这些费率差异未纳入金额；上表是统一估值口径，不是这些模式的实际报价。
+上表是 Standard 基准。0.4 仅对各设备升级后新增记录按可确认的请求设置估算 Fast/Ultrafast，历史 Fast 不补录。Fast 独立单价从官网 Fast 表同步，缺价时待计价，不使用固定倍数。支持模式估值，并单列加速额外金额；长上下文、12 小时缓存保留等差异尚未纳入。详见升级指南中的档位口径。
 
 **为什么周额度总估值可能下降？** 同样的 Token 数量，换模型、缓存占比或单价变化都会改变 API 等价金额。例如旧 `gpt-6-astra` 的缓存读取参考价为 $1／百万，而 `gpt-6.2-astra` 为 $0.40；缓存占比高时，金额降幅会比非缓存输入和输出的 20% 降幅更大。再除以官方已用额度比例后，整周推算值也会变化。这个值不能单独用来判断订阅额度是否下调；还需考虑模型组合、日志覆盖范围和官方用量数据。
 
@@ -151,7 +165,7 @@ gpt-6.2-sol	2	0.1	10	2.5	https://developers.openai.com/api/docs/pricing	2026-11-
 
 **旧版公式价格表：** 如果 A2 使用 `SORT/UNIQUE` 自动列模型，B2:G2 使用 `ARRAYFORMULA/VLOOKUP`，这些单元格是公式输出区，不要直接覆盖。应修改右侧 J:P 的参数表；J 为模型名，K:N 依次为输入、缓存读取、输出、缓存写入，O:P 为来源和日期。新增参数行后，把 B2:G2 中的查找范围一并扩展，例如从 `$J$2:$P$5` 改为 `$J$2:$P$6`。最终 A:G 必须能返回新增模型的数值价格。仅使用 `setup()` 初始化的空白 `Prices` 表可直接填写 A:G。
 
-**历史金额会重算：** 接收端每次用当前价格重新计算已采集记录。G 列日期只是注记，不是价格生效日期，也不会按历史价格分段结算。若需保留调价前的估值，请先导出报表；需要按调用日期匹配不同价格的账单核算，必须另行实现价格历史表及日期匹配逻辑。当前也未自动区分长上下文、Fast、Batch 或区域附加费。
+**历史金额会重算：** 接收端每次用当前价格重新计算已采集记录。G 列日期只是注记，不是价格生效日期，也不会按历史价格分段结算。若需保留调价前的估值，请先导出报表；需要按调用日期匹配不同价格的账单核算，必须另行实现价格历史表及日期匹配逻辑。0.4 可按日志档位区分 Fast 和已核实的 Ultrafast 规则；长上下文、Batch 和区域附加费仍未自动区分。
 
 ### 排除模型与缺价提示
 
@@ -213,6 +227,7 @@ swift run CodexQuotaTests
 swift build -c release
 (cd collector && python3 -m unittest test_monitor test_windows)
 (cd collector && node test_receiver.cjs)
+(cd collector && node test_auto_pricing.cjs)
 ```
 
 Python 与接收端测试使用合成数据，不需要真实 Google 或 Codex 凭据。Windows 任务注册仍需在 Windows 实机验证。

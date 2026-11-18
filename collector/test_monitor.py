@@ -20,6 +20,48 @@ def event(total, last, timestamp='2026-09-09T01:00:00Z'):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_tier_settings_and_model_switch_do_not_invent_usage(self):
+        state={}
+        m.token_event({'type':'event_msg','payload':{'type':'thread_settings_applied','thread_settings':{'model':'gpt-6.2-astra','service_tier':'priority','cwd':'private'}}},state,C)
+        m.token_event({'type':'turn_context','payload':{'model':'gpt-6.2-astra'}},state,C)
+        one=m.token_event(event(100,100),state,C)
+        self.assertEqual(one['service_tier'],'fast');self.assertEqual(one['tier_source'],'thread_settings')
+        self.assertNotIn('private',json.dumps(one))
+        m.token_event({'type':'turn_context','payload':{'model':'gpt-6.2-sol'}},state,C)
+        two=m.token_event(event(200,100,'2026-09-09T01:01:00Z'),state,C)
+        self.assertEqual(two['service_tier'],'unknown')
+        m.token_event({'type':'turn_context','payload':{'model':'gpt-6.2-sol','service_tier':'default'}},state,C)
+        three=m.token_event(event(300,100,'2026-09-09T01:02:00Z'),state,C)
+        self.assertEqual(three['service_tier'],'standard')
+        self.assertEqual(m.normalize_tier('auto'),'unknown')
+
+    def test_tiers_apply_only_after_upgrade_without_requeuing_history(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'sessions').mkdir();db=m.database(root/'test.sqlite');config=dict(C,codex_home=folder)
+            path=root/'sessions/a.jsonl'
+            lines=[{'type':'event_msg','payload':{'type':'thread_settings_applied','thread_settings':{'model':'gpt-6.2-astra','service_tier':'priority'}}}, {'type':'turn_context','payload':{'model':'gpt-6.2-astra'}}, event(100,100)]
+            path.write_text(''.join(json.dumps(x)+'\n' for x in lines))
+            cutoff=dt.datetime(2026,9,9,1,1,tzinfo=dt.timezone.utc)
+            with patch.object(m,'utcnow',return_value=cutoff):
+                m.scan(db,config)
+            identity,data=db.execute('SELECT id,data FROM events').fetchone()
+            self.assertEqual(json.loads(data)['service_tier'],'unknown')
+            db.execute('UPDATE events SET uploaded=1');db.execute("UPDATE meta SET value='old' WHERE key='collector_revision'");db.commit()
+            with path.open('a') as stream:
+                stream.write(json.dumps(event(200,100,'2026-09-09T01:01:00Z'))+'\n')
+            # A historical event discovered only after upgrading also stays unknown.
+            (root/'sessions/late.jsonl').write_text(''.join(json.dumps(x)+'\n' for x in lines[:2]+[event(300,300,'2026-09-09T00:59:00Z')]))
+            m.scan(db,config)
+            rows=db.execute('SELECT id,data,uploaded FROM events ORDER BY timestamp').fetchall()
+            self.assertEqual(len(rows),3)
+            self.assertEqual(json.loads(rows[0][1])['service_tier'],'unknown')
+            old=next(r for r in rows if r[0]==identity)
+            self.assertEqual(old[2],1);self.assertEqual(old[1],data)
+            self.assertEqual(json.loads(rows[-1][1])['service_tier'],'fast')
+            self.assertEqual(db.execute("SELECT value FROM meta WHERE key='service_tiers_since'").fetchone()[0],cutoff.isoformat())
+            db.execute('UPDATE events SET uploaded=1');db.commit();m.scan(db,config)
+            self.assertEqual(db.execute('SELECT sum(uploaded) FROM events').fetchone()[0],3);db.close()
+
     def test_native_image_success_dimensions_and_private_fields(self):
         png = b'\x89PNG\r\n\x1a\n'+b'\0\0\0\rIHDR'+m.struct.pack('>II',1086,1448)
         entry={'timestamp':'2026-10-08T16:01:00Z','type':'event_msg','payload':{

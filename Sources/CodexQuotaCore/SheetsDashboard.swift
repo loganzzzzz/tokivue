@@ -1,6 +1,24 @@
 import Foundation
 
 public struct SheetsDashboard: Codable, Equatable, Sendable {
+    public struct ModelUsage: Codable, Equatable, Sendable, Identifiable {
+        public var id: String { model }
+        public let model: String
+        public let total_tokens: Int64
+        public let share: Double
+        public let cost: Double?
+        public let extra_cost: Double?
+        public let fast_tokens: Int64
+        public let ultrafast_tokens: Int64
+        public let unknown_tier_tokens: Int64
+        public let excluded: Bool
+    }
+    public struct ModelRankings: Codable, Equatable, Sendable {
+        public let from: String
+        public let to: String
+        public let total_tokens: Int64
+        public let models: [ModelUsage]
+    }
     public struct ImageStats: Codable, Equatable, Sendable {
         public let today_success: Int
         public let total_success: Int
@@ -33,6 +51,7 @@ public struct SheetsDashboard: Codable, Equatable, Sendable {
     public let missing_prices: Int?
     public let devices: [Device]?
     public let image_stats: ImageStats?
+    public let model_rankings: ModelRankings?
 
     public var observedDate: Date? {
         guard let observed_at else { return nil }
