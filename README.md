@@ -105,6 +105,34 @@ Luna 与自动审核保留 Tokens，但默认排除美元估值。价格为 Stan
 
 `collector/pricing-reference.json` 是带核实日期的参考记录，**修改该文件不会自动同步 Sheets**。本机 `config.json` 的 `prices_per_million` 字段也不参与当前 Sheets 看板计价。项目不自动抓取或更新官网价格；使用者需自行核对价格适用的模型、服务等级和上下文长度。
 
+### GPT‑6.2 Astra / Sol 价格更新（2026-11-18）
+
+按 [OpenAI 官方定价](https://developers.openai.com/api/docs/pricing)核实，采用 **Standard、短上下文、30 分钟缓存写入**。单位为美元／百万 Tokens，表格列顺序与 `Prices` 的 B:E 一致：
+
+| 模型 | 输入 | 缓存读取 | 输出 | 缓存写入（30分钟） |
+| --- | ---: | ---: | ---: | ---: |
+| `gpt-6.2-astra` | 8 | 0.40 | 40 | 10 |
+| `gpt-6.2-sol` | 2 | 0.10 | 10 | 2.50 |
+
+模型详情：[GPT‑6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)、[GPT‑6.2 Sol](https://developers.openai.com/api/docs/models/gpt-6.2-sol)。旧模型保持各自价格；不会将旧 Astra 或 Sol 的历史用量改成新模型价格。Luna 与自动审核仍按默认规则排除估值。
+
+**已有部署如何加入：**
+
+1. 直接填价的表：在 `Prices!A:G` 新增下面两行；已有同名行则更新原行，不重复追加。A 列名称必须与采集记录一致。
+2. 公式价格表：保留 A:G 的公式，在右侧 J:P 参数表新增两行。如果原参数区为 J2:P5，应在说明文字之前插入两行，形成 J2:P7，并把 B2:G2 六个公式中的 `$J$2:$P$5` 扩展为 `$J$2:$P$7`。有自定义模型时按实际末行调整，不覆盖已有价格或说明。
+3. 刷新看板或执行一次采集。接收端会用新价格重新计算已有的 6.2 模型记录，不需要重装客户端，也无需仅为改价而重新部署 Apps Script。提交本仓库的 JSON 本身不会修改任何人的私有 Sheet。
+
+以下为制表符分隔的数据，可粘贴到上述对应的七列区域：
+
+```tsv
+gpt-6.2-astra	8	0.4	40	10	https://developers.openai.com/api/docs/pricing	2026-11-18
+gpt-6.2-sol	2	0.1	10	2.5	https://developers.openai.com/api/docs/pricing	2026-11-18
+```
+
+价格表目前不按单次请求识别 Fast／Ultrafast、长上下文或 12 小时缓存保留等档位，因此这些费率差异未纳入金额；上表是统一估值口径，不是这些模式的实际报价。
+
+**为什么周额度总估值可能下降？** 同样的 Token 数量，换模型、缓存占比或单价变化都会改变 API 等价金额。例如旧 `gpt-6-astra` 的缓存读取参考价为 $1／百万，而 `gpt-6.2-astra` 为 $0.40；缓存占比高时，金额降幅会比非缓存输入和输出的 20% 降幅更大。再除以官方已用额度比例后，整周推算值也会变化。这个值不能单独用来判断订阅额度是否下调；还需考虑模型组合、日志覆盖范围和官方用量数据。
+
 ### 新增模型或修改单价
 
 1. 打开自己的 Google Sheet，在 `TokenEvents!F:F` 查到实际采集的完整模型名。版本后缀、大小写和空格都要一致；接收端不会自动将未知模型归到 Astra 或 Sol。

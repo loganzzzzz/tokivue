@@ -31,10 +31,26 @@
       "cache_write": 2.5,
       "output": 10,
       "verified_on": "2026-10-09"
+    },
+    "gpt-6.2-astra": {
+      "input": 8,
+      "cached_input": 0.4,
+      "cache_write": 10,
+      "output": 40,
+      "verified_on": "2026-11-18",
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.2-astra"
+    },
+    "gpt-6.2-sol": {
+      "input": 2,
+      "cached_input": 0.1,
+      "cache_write": 2.5,
+      "output": 10,
+      "verified_on": "2026-11-18",
+      "source": "https://developers.openai.com/api/docs/models/gpt-6.2-sol"
     }
   },
-  "scope": "Exact model matching at Standard short-context rates. Both Luna versions and codex-auto-review are excluded from USD estimates by user request; tokens remain included. Other unmapped models stay unpriced. Estimates exclude long context, Fast, regional uplifts and independent image generation.",
-  "implemented_in": "Google Sheets Prices!J2:P5 and B2:G2 lookup arrays; receiver image-output estimator",
+  "scope": "Exact model matching at Standard short-context rates, with 30-minute cache writes. Both Luna versions and codex-auto-review are excluded from USD estimates; tokens remain included. Other unmapped models stay unpriced. Does not model long context, Fast/Ultrafast, Batch/Flex, background discounts, regional uplifts or 12-hour cache retention. Image generation output estimates are handled separately using image_output_estimate; image input costs are excluded.",
+  "implemented_in": "Runtime: Google Sheets Prices!A:G. Formula-based deployments may use J2:P7 with B2:G2 lookup arrays. Image output is estimated by the receiver; this JSON is reference data, not automatic configuration.",
   "excluded_from_cost": [
     "gpt-5.6-luna",
     "gpt-6-luna",
@@ -50,5 +66,7 @@
     "dimensions": "PNG dimensions, rounded up to multiples of 16; invalid/missing dimensions stay unpriced",
     "scope": "Output only. Excludes text/image input and streaming partial images. Estimated image tokens are separate from measured token totals.",
     "calculator_script_sha256": "3e8523c067cb199fc496cc81790113def372dbf66af165b8e9039fe747e48099"
-  }
+  },
+  "updated_on": "2026-11-18",
+  "cache_write_retention": "30 minutes"
 }

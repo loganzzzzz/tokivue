@@ -194,3 +194,22 @@ const before61=deviceRead(device).current_device_cost;
 assert.equal(send({...body,events:[{...astra,id:'sol61-event-123',model:'gpt-6.1-sol'}],snapshots:[]}).ok,true);
 assert.ok(Math.abs(deviceRead(device).current_device_cost-before61-2.29)<1e-10);
 console.log('GPT-6.1 Sol independent cached-read price passed.');
+
+// New models are unpriced until explicitly configured; adding prices reprices
+// the existing records, with each model's own cache-read/write/output rates.
+const reference62=JSON.parse(fs.readFileSync(__dirname+'/pricing-reference.json','utf8'));
+for (const [model,expected] of [['gpt-6.2-astra',9.16],['gpt-6.2-sol',2.29]]) {
+  const before62=deviceRead(device).current_device_cost;
+  const pricedEvent={...astra,id:model.replaceAll('.', '-')+'-reference-event',model};
+  assert.equal(send({...body,events:[pricedEvent],snapshots:[]}).ok,true);
+  assert.equal(deviceRead(device).current_device_cost,null);
+  assert.equal(deviceRead(device).missing_prices,1);
+  const rate=reference62.models[model];
+  tables.Prices.rows.push([model,rate.input,rate.cached_input,rate.output,rate.cache_write,rate.source,rate.verified_on]);
+  const after62=deviceRead(device);
+  assert.equal(after62.missing_prices,0);
+  assert.ok(Math.abs(after62.current_device_cost-before62-expected)<1e-10);
+  assert.equal(send({...body,events:[pricedEvent],snapshots:[]}).ok,true);
+  assert.ok(Math.abs(deviceRead(device).current_device_cost-after62.current_device_cost)<1e-10);
+}
+console.log('GPT-6.2 Astra/Sol reference prices, historical repricing and dedup passed.');
