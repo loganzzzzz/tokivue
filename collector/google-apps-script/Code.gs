@@ -491,7 +491,7 @@ function enableModelRankings() {
 
 function writeModelRankings_(sheet,data) {
   sheet.getRange('A1:J1').merge().setValue('Tokivue · 当前周期模型消耗榜').setFontSize(16).setFontWeight('bold');
-  sheet.getRange('A2:J2').merge().setValue('当前周额度周期 · 全部已接入设备 · 按总 Tokens 降序；档位未知部分按 Standard 暂估；生图单独统计');
+  sheet.getRange('A2:J2').merge().setValue('当前周额度周期 · 全部已接入设备 · 按总 Tokens 降序；历史记录按 Standard 估算；生图单独统计');
   sheet.getRange('A3:J3').merge().setValue(data.period_available ? '周期 '+Utilities.formatDate(new Date(data.from),'Asia/Shanghai','MM/dd HH:mm')+' 至 '+Utilities.formatDate(new Date(data.window_end),'Asia/Shanghai','MM/dd HH:mm')+' · 统计截至 '+Utilities.formatDate(new Date(data.to),'Asia/Shanghai','MM/dd HH:mm')+'（北京时间）':'等待当前周期额度快照；旧周期已结束或重置时间不可用');
   sheet.getRange(4,1,1,10).setValues([['排名','模型','总 Tokens','占比','输入 Tokens','输出 Tokens','Fast Tokens','Ultrafast Tokens','估值 USD','加速额外估值 USD']]).setFontWeight('bold').setBackground('#e8eef8');
   if(sheet.getLastRow()>4)sheet.getRange(5,1,sheet.getLastRow()-4,10).clearContent();

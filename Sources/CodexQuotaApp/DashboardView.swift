@@ -182,7 +182,7 @@ struct DashboardView: View {
             }
             VStack(spacing: 3) {
                 Text("按模型分别估值 · 非订阅余额")
-                    .help("按模型和已记录的加速档位估值；缺少档位的历史记录按 Standard 暂估。")
+                    .help("按模型和已记录的加速档位估值；历史记录按 Standard 估算。")
                 Text("估值未含 Luna、自动审核；生图仅估输出成本")
                 Text(model.refreshing ? "正在同步 Google Sheets" : model.error != nil
                      ? "\(refreshCountdown(now)) 秒后自动重试"
@@ -230,7 +230,7 @@ struct DashboardView: View {
                                     Text("Fast \(tokens(item.fast_tokens)) · Ultrafast \(tokens(item.ultrafast_tokens)) Tokens").font(.system(size: 9)).foregroundColor(muted)
                                     Text(item.extra_cost.map { String(format: "加速额外估值 $%.2f", $0) } ?? "加速估值待确认").font(.system(size: 10)).foregroundColor(blue)
                                 }
-                                if item.unknown_tier_tokens > 0 { Text("\(tokens(item.unknown_tier_tokens)) Tokens 档位未知，按 Standard 暂估").font(.system(size: 9)).foregroundColor(.orange) }
+                                if item.unknown_tier_tokens > 0 { Text("历史记录按 Standard 估算 · \(tokens(item.unknown_tier_tokens)) Tokens").font(.system(size: 9)).foregroundColor(muted) }
                             }.padding(12).module()
                         }
                     }
