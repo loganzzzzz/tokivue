@@ -67,3 +67,6 @@ ctx.SpreadsheetApp.openById=originalOpen;
 reset();status=503;assert.throws(()=>ctx.enableAutoPricing());assert.equal(fetches,3,'transient failures are bounded to three attempts');
 reset();document='changed format';assert.throws(()=>ctx.enableAutoPricing());assert.equal(fetches,1,'schema failures are not retried');
 console.log('Bounded transient retries and non-retryable schema failures passed.');
+
+reset();sheets.FastPrices=new Sheet();ctx.enableAutoPricing();assert.deepEqual(plain(sheets.FastPrices.getRange(1,1,1,7).getValues()[0]),headers);assert.ok(sheets.FastPrices.getLastRow()>1);
+console.log("Partially created empty price tabs recover on retry.");

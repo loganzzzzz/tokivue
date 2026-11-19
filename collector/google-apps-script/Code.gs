@@ -415,7 +415,8 @@ function storeEventTiers_(ss,rows,events) {
   const provided=new Map(rows.map(r=>[r[0],r]));
   known.forEach(e=>{const a=stored.get(e.id),b=provided.get(e.id);if(!a || [0,1,3,4,5,6,7,8,9,10,11].some(i=>a[i]!==b[i]))throw new Error('tier event mismatch');});
   let sheet=ss.getSheetByName('EventTiers');
-  if(!sheet){sheet=ss.insertSheet('EventTiers');sheet.getRange(1,1,1,3).setValues([['event_id','service_tier','tier_source']]);sheet.setFrozenRows(1);}
+  if(!sheet)sheet=ss.insertSheet('EventTiers');
+  if(!sheet.getLastRow()){sheet.getRange(1,1,1,3).setValues([['event_id','service_tier','tier_source']]);sheet.setFrozenRows(1);}
   if(JSON.stringify(sheet.getRange(1,1,1,3).getValues()[0])!==JSON.stringify(['event_id','service_tier','tier_source']))throw new Error('tier schema mismatch');
   // Stable event IDs: enrichment never adds TokenEvents or changes first-device attribution.
   uniqueRows_(sheet,known.map(e=>[e.id,e.service_tier,e.tier_source]));

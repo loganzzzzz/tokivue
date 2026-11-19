@@ -223,6 +223,8 @@ assert.equal(send({...body,events:[tierEvent],snapshots:[]}).ok,true);
 tables.FastPrices=new Sheet(['model','input','cached','output','write','source','date']);
 tables.FastPrices.rows.push(['gpt-6.2-astra',16,.8,80,20]);
 const baselineTier=deviceRead(device),countBeforeTier=tables.TokenEvents.rows.length;
+// Recover a tab whose creation succeeded but header write timed out.
+tables.EventTiers=new Sheet([]);tables.EventTiers.rows=[];tables.EventTiers.setFrozenRows=()=>{};
 const enriched={...tierEvent,service_tier:'fast',tier_source:'thread_settings'};
 const tierReply=send({...body,device_id:'device-456',events:[enriched],snapshots:[]});assert.equal(tierReply.ok,true);assert.equal(tierReply.pricing_schema,2);
 assert.equal(tables.TokenEvents.rows.length,countBeforeTier);assert.equal(tables.TokenEvents.rows.find(r=>r[0]===tierEvent.id)[2],device);

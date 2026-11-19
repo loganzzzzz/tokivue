@@ -189,7 +189,8 @@ function disableAutoPricing() {
 
 function syncFastPrices_(ss,parsed,props,now) {
   let sheet=ss.getSheetByName('FastPrices');
-  if(!sheet){sheet=ss.insertSheet('FastPrices');sheet.getRange(1,1,1,7).setValues([PRICE_HEADERS]);sheet.setFrozenRows(1);}
+  if(!sheet)sheet=ss.insertSheet('FastPrices');
+  if(!sheet.getLastRow()){sheet.getRange(1,1,1,7).setValues([PRICE_HEADERS]);sheet.setFrozenRows(1);}
   if(JSON.stringify(sheet.getRange(1,1,1,7).getValues()[0])!==JSON.stringify(PRICE_HEADERS))throw new Error('Unexpected FastPrices headers');
   const count=Math.max(0,sheet.getLastRow()-1),rows=count?sheet.getRange(2,1,count,7).getValues():[],formulas=count?sheet.getRange(2,1,count,7).getFormulas():[];
   const existing=new Map();rows.forEach((r,i)=>{if(!r[0])return;if(existing.has(r[0]))throw new Error('Duplicate Fast model');existing.set(r[0],{row:i+2,values:r,hasFormula:formulas[i].some(Boolean)});});
