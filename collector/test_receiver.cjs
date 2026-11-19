@@ -242,15 +242,25 @@ tierMap.set(enriched.id,'ultrafast');assert.ok(Math.abs(context.eventEstimate_(b
 const postPromo=[...baseRow];postPromo[3]='2027-03-01T08:00:00Z';assert.ok(Math.abs(context.eventEstimate_(postPromo,priceMap,new Map(),tierMap).cost-54.96)<1e-10);
 const beforePromo=[...postPromo];beforePromo[3]='2027-03-01T07:59:59Z';assert.ok(Math.abs(context.eventEstimate_(beforePromo,priceMap,new Map(),tierMap).cost-27.48)<1e-10);
 const row=(id,model,date)=>{const r=[...baseRow];r[0]=id;r[5]=model;r[3]=date;return r;};
+const rankQuota={limit_id:'codex',duration_minutes:10080,resets_at:Date.parse('2026-11-18T13:00:00Z')/1000};
 const ranked=context.modelRankings_([
- row('rank-start','gpt-6.2-astra','2026-11-11T12:00:00Z'),row('rank-fast','gpt-6.2-astra','2026-11-18T11:00:00Z'),
+ row('rank-start','gpt-6.2-astra','2026-11-11T13:00:00Z'),row('rank-fast','gpt-6.2-astra','2026-11-18T11:00:00Z'),
  row('rank-sol','gpt-6.2-sol','2026-11-18T11:00:00Z'),row('rank-luna','gpt-6-luna','2026-11-18T11:00:00Z'),
- row('before-start','gpt-6.2-astra','2026-11-11T11:59:59Z'),row('future','gpt-6.2-astra','2026-11-18T12:00:01Z')
-],priceMap,officialFast,new Map([['rank-fast','fast'],['rank-sol','standard']]),new Date('2026-11-18T12:00:00Z'));
+ row('before-start','gpt-6.2-astra','2026-11-11T12:59:59Z'),row('future','gpt-6.2-astra','2026-11-18T12:00:01Z')
+],priceMap,officialFast,new Map([['rank-fast','fast'],['rank-sol','standard']]),new Date('2026-11-18T12:00:00Z'),rankQuota);
 assert.equal(ranked.total_tokens,4400000);assert.equal(ranked.models[0].model,'gpt-6.2-astra');assert.equal(ranked.models[0].share,.5);assert.equal(ranked.models[0].unknown_tier_tokens,1100000);
 assert.ok(Math.abs(ranked.models[0].extra_cost-9.16)<1e-10);assert.equal(ranked.models.find(r=>r.model==='gpt-6-luna').cost,null);
 assert.equal(context.modelRankings_([],priceMap,new Map(),new Map(),new Date()).total_tokens,0);
-console.log('Rolling model rankings, tier enrichment, Fast/Ultrafast estimates, promo boundary and excluded-model counts passed.');
+assert.equal(ranked.from,'2026-11-11T13:00:00.000Z');assert.equal(ranked.window_end,'2026-11-18T13:00:00.000Z');assert.equal(ranked.period_available,true);
+for(const quota of [null,{...rankQuota,duration_minutes:300},{...rankQuota,resets_at:NaN}]) {
+ assert.equal(context.modelRankings_([baseRow],priceMap,officialFast,tierMap,new Date('2026-11-18T12:00:00Z'),quota).period_available,false);
+}
+const atReset=new Date('2026-11-18T13:00:00Z');
+assert.equal(context.modelRankings_([baseRow],priceMap,officialFast,tierMap,atReset,rankQuota).total_tokens,0);
+const resetRows=[row('prior','gpt-6.2-astra','2026-11-18T12:59:59Z'),row('new','gpt-6.2-sol','2026-11-18T13:00:00Z')];
+const nextCycle=context.modelRankings_(resetRows,priceMap,officialFast,tierMap,atReset,{...rankQuota,resets_at:Date.parse('2026-11-25T13:00:00Z')/1000});
+assert.equal(nextCycle.models.length,1);assert.equal(nextCycle.models[0].model,'gpt-6.2-sol');
+console.log('Quota-period rankings, reset boundaries, missing/expired quotas and tier estimates passed.');
 
 // Operational status is available only through the authenticated dashboard response.
 props.TOKIVUE_AUTO_PRICING_ENABLED='true';props.TOKIVUE_PRICE_LAST_SUCCESS='2026-11-19T03:00:00Z';props.TOKIVUE_PRICE_LAST_ERROR='HTTP 503';

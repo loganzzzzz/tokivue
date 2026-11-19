@@ -14,6 +14,25 @@ public struct SheetsDashboard: Codable, Equatable, Sendable {
         public let excluded: Bool
     }
     public struct ModelRankings: Codable, Equatable, Sendable {
+        public let period_kind: String?
+        public let period_available: Bool?
+        public let window_end: String?
+
+        public func isCurrent(at now: Date = Date()) -> Bool {
+            guard period_kind == "quota_week", period_available == true,
+                  let end = windowEndDate, let start = Self.parseDate(from) else { return false }
+            return start <= now && now < end
+        }
+
+        public var windowEndDate: Date? { window_end.flatMap(Self.parseDate) }
+        public var startDate: Date? { Self.parseDate(from) }
+        public var observedDate: Date? { Self.parseDate(to) }
+
+        private static func parseDate(_ value: String) -> Date? {
+            let parser = ISO8601DateFormatter()
+            parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return parser.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        }
         public let from: String
         public let to: String
         public let total_tokens: Int64

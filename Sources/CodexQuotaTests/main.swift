@@ -35,6 +35,14 @@ private let tests: [(String, () throws -> Void)] = [
         try expect(ranked.model_rankings?.models.first?.fast_tokens,80)
         try expect(ranked.model_rankings?.models.first?.extra_cost,0.6)
         try expect(ranked.model_rankings?.total_tokens,100)
+        let at = ISO8601DateFormatter().date(from: "2026-11-18T12:00:00Z")!
+        try expect(ranked.model_rankings?.isCurrent(at: at),false)
+        let currentJSON = json.replacingOccurrences(of: "\"from\":", with: "\"period_kind\":\"quota_week\",\"period_available\":true,\"window_end\":\"2026-11-18T13:00:00Z\",\"from\":")
+        let current = try SheetsDashboardClient.parse(Data(currentJSON.utf8)).model_rankings!
+        try expect(current.isCurrent(at: at),true)
+        try expect(current.isCurrent(at: ISO8601DateFormatter().date(from: "2026-11-18T13:00:00Z")!),false)
+        let unavailable = try SheetsDashboardClient.parse(Data(currentJSON.replacingOccurrences(of: "\"period_available\":true", with: "\"period_available\":false").utf8)).model_rankings!
+        try expect(unavailable.isCurrent(at: at),false)
     }),
     ("表格地址来自本地配置且仅接受 Google Sheets HTTPS", {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

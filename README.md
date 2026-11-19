@@ -31,14 +31,16 @@ Tokivue 将本地用量采集器、Google Sheets 汇总接收端和 macOS 原生
 ## 0.4 新功能
 
 - **自动检查官网价格**：云端约每 6 小时检查 Standard/Fast 价格，加入新模型并记录变更，保护手动改价。
-- **最近 7 天模型周榜**：跨设备去重，按总 Tokens 排序，展示模型占比与估值。
+- **当前周期模型排行**：跟随账号当前周额度重置周期，跨设备去重，按总 Tokens 排序，展示模型占比与估值。
 - **Fast 额外估值**：读取可确认的日志档位，显示加速 Tokens 与相对 Standard 的额外金额；未知档位不猜测。
 
 需要一次云端升级及 Google 授权，详见 [0.4 升级与启用指南](docs/UPGRADE-0.4.md)。仅更新 GitHub 代码不会自动开启你私有表格的触发器。升级顺序：接收端 → Mac 界面 → 各设备采集器。
 
 ### 模型周榜示意
 
-<img src="docs/images/model-rankings.png" alt="最近 7 天模型周榜，含 Fast 额外估值；虚构示例数据" width="344" />
+<img src="docs/images/model-rankings.png" alt="当前周期模型排行，含 Fast 额外估值；虚构示例数据" width="344" />
+
+0.4.1：排行榜顶部和底部均可返回总览，重新打开弹窗默认显示总览。统计范围与当前周额度周期一致；缺少有效额度快照时等待同步。
 
 示意图使用虚构数据。Fast／Ultrafast Tokens 是实际 Tokens 中的档位分类，不会再乘倍率计入总 Tokens。
 

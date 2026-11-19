@@ -37,6 +37,10 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
             NSWorkspace.shared.open(self.client.sheetURL)
         }
         model.quit = { NSApp.terminate(nil) }
+        model.navigationChanged = { [weak self] in
+            // Re-measure after SwiftUI has applied the navigation state change.
+            DispatchQueue.main.async { self?.resizeCard() }
+        }
         popover.behavior = .transient
         popover.delegate = self
         popover.animates = true
@@ -61,12 +65,27 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
     @objc private func toggleCard(_ sender: Any?) {
         if popover.isShown { popover.performClose(nil); return }
         guard let button = statusItem.button else { return }
+        model.showOverview()
+        resizeCard()
         if model.fetchedAt.map({ Date().timeIntervalSince($0) > 60 }) ?? true { refresh() }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
     func popoverDidShow(_ notification: Notification) {
         startOutsideClickMonitoring()
+        resetAutoDismiss()
+    }
+
+    private func resizeCard() {
+        guard !stopped, let host = popover.contentViewController else { return }
+        host.view.layoutSubtreeIfNeeded()
+        let size = host.view.fittingSize
+        host.preferredContentSize = size
+        popover.contentSize = size
+        if popover.isShown { resetAutoDismiss() }
+    }
+
+    private func resetAutoDismiss() {
         cancelAutoDismiss()
         let timer = Timer(timeInterval: 30, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {

@@ -26,6 +26,7 @@ if let previewIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard-p
         try MainActor.assumeIsolated {
             _ = NSApplication.shared
             let model = DashboardViewModel()
+            model.showsModelRankings = CommandLine.arguments.contains("--rankings")
             let client = SheetsDashboardClient()
             defer { client.stop() }
             if let cache = client.cached() {

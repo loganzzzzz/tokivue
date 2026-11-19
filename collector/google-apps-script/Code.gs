@@ -232,7 +232,7 @@ function getDashboardData(currentDeviceId = null) {
   const prices = new Map(readRows_(ss.getSheetByName('Prices')).map(r=>[r[0],r]));
   const fastPrices=new Map(readOptionalRows_(ss,'FastPrices').map(r=>[r[0],r]));
   const tiers=new Map(readOptionalRows_(ss,'EventTiers').map(r=>[r[0],r[1]]));
-  const modelRankings=modelRankings_(events,prices,fastPrices,tiers,new Date());
+  const modelRankings=modelRankings_(events,prices,fastPrices,tiers,new Date(),quota);
   let totalCost=0, windowCost=0, totalMissing=0, windowMissing=0;
   let deviceCost=0, deviceMissing=0, deviceWindowCost=0, deviceWindowMissing=0;
   const start = quota && quota.resets_at ? quota.resets_at*1000 - quota.duration_minutes*60000 : null;
@@ -450,10 +450,20 @@ function eventEstimate_(r,prices,fastPrices,tiers) {
   return {cost:base,extra:0,excluded:false,unknown:true};
 }
 
-function modelRankings_(events,prices,fastPrices,tiers,now) {
-  const end=now.getTime(),start=end-7*86400000,map=new Map();
+function modelRankings_(events,prices,fastPrices,tiers,now,quota) {
+  const observed=now.getTime();
+  const end=quota && quota.limit_id==='codex' && quota.duration_minutes===10080 &&
+    typeof quota.resets_at==='number' && Number.isFinite(new Date(quota.resets_at*1000).getTime()) ? quota.resets_at*1000:null;
+  const start=end===null?null:end-10080*60000;
+  const available=start!==null && start<=observed && observed<end;
+  const period={period_kind:'quota_week',period_available:available,
+    from:new Date(start===null?observed:start).toISOString(),
+    to:new Date(available?observed:Math.min(end===null?observed:end,observed)).toISOString(),
+    window_end:end===null?null:new Date(end).toISOString()};
+  if(!available)return {...period,total_tokens:0,models:[]};
+  const map=new Map();
   for(const r of events) {
-    const time=Date.parse(r[3]);if(time<start||time>end||!Number.isFinite(time))continue;
+    const time=Date.parse(r[3]);if(time<start||time>=end||time>observed||!Number.isFinite(time))continue;
     if(!map.has(r[5]))map.set(r[5],{model:r[5],total_tokens:0,input_tokens:0,output_tokens:0,events:0,cost:0,extra_cost:0,fast_tokens:0,ultrafast_tokens:0,unknown_tier_tokens:0,excluded:excludedCostModel_(r[5]),missing_prices:0});
     const item=map.get(r[5]),estimate=eventEstimate_(r,prices,fastPrices,tiers);
     item.total_tokens+=r[11];item.input_tokens+=r[6];item.output_tokens+=r[9];item.events++;
@@ -465,7 +475,7 @@ function modelRankings_(events,prices,fastPrices,tiers,now) {
   const models=[...map.values()].sort((a,b)=>b.total_tokens-a.total_tokens||a.model.localeCompare(b.model));
   const total=models.reduce((n,r)=>n+r.total_tokens,0);
   models.forEach(r=>{r.share=total?r.total_tokens/total:0;if(r.missing_prices || r.excluded){r.cost=null;r.extra_cost=null;}});
-  return {from:new Date(start).toISOString(),to:now.toISOString(),total_tokens:total,models};
+  return {...period,total_tokens:total,models};
 }
 
 function enableModelRankings() {
@@ -473,16 +483,16 @@ function enableModelRankings() {
   try {
     const ss=SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'));
     let sheet=ss.getSheetByName('模型周榜');if(!sheet)sheet=ss.insertSheet('模型周榜');
-    if(sheet.getLastRow() && sheet.getRange(1,1).getValue()!=='Tokivue · 最近 7 天模型消耗榜')throw new Error('Existing ranking sheet is not owned by Tokivue');
+    if(sheet.getLastRow() && !['Tokivue · 最近 7 天模型消耗榜','Tokivue · 当前周期模型消耗榜'].includes(sheet.getRange(1,1).getValue()))throw new Error('Existing ranking sheet is not owned by Tokivue');
     const data=getDashboardData();if(data.empty)throw new Error('Upload a quota snapshot first');
     writeModelRankings_(sheet,data.model_rankings);
   } finally {lock.releaseLock();}
 }
 
 function writeModelRankings_(sheet,data) {
-  sheet.getRange('A1:J1').merge().setValue('Tokivue · 最近 7 天模型消耗榜').setFontSize(16).setFontWeight('bold');
-  sheet.getRange('A2:J2').merge().setValue('滚动 7 天 · 全部已接入设备 · 按总 Tokens 降序；档位未知部分按 Standard 暂估；生图单独统计');
-  sheet.getRange('A3:J3').merge().setValue(data.from+' 至 '+data.to+' (UTC)');
+  sheet.getRange('A1:J1').merge().setValue('Tokivue · 当前周期模型消耗榜').setFontSize(16).setFontWeight('bold');
+  sheet.getRange('A2:J2').merge().setValue('当前周额度周期 · 全部已接入设备 · 按总 Tokens 降序；档位未知部分按 Standard 暂估；生图单独统计');
+  sheet.getRange('A3:J3').merge().setValue(data.period_available ? '周期 '+Utilities.formatDate(new Date(data.from),'Asia/Shanghai','MM/dd HH:mm')+' 至 '+Utilities.formatDate(new Date(data.window_end),'Asia/Shanghai','MM/dd HH:mm')+' · 统计截至 '+Utilities.formatDate(new Date(data.to),'Asia/Shanghai','MM/dd HH:mm')+'（北京时间）':'等待当前周期额度快照；旧周期已结束或重置时间不可用');
   sheet.getRange(4,1,1,10).setValues([['排名','模型','总 Tokens','占比','输入 Tokens','输出 Tokens','Fast Tokens','Ultrafast Tokens','估值 USD','加速额外估值 USD']]).setFontWeight('bold').setBackground('#e8eef8');
   if(sheet.getLastRow()>4)sheet.getRange(5,1,sheet.getLastRow()-4,10).clearContent();
   const rows=data.models.map((r,i)=>[i+1,r.model,r.total_tokens,r.share,r.input_tokens,r.output_tokens,r.fast_tokens,r.ultrafast_tokens,r.excluded?'已排除':r.cost===null?'待计价':r.cost,r.excluded?'已排除':r.extra_cost===null?'待计价':r.extra_cost]);

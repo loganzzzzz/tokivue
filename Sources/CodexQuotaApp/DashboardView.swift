@@ -14,6 +14,19 @@ final class DashboardViewModel: ObservableObject {
     var reconnect: () -> Void = {}
     var openSheet: () -> Void = {}
     var quit: () -> Void = {}
+    var navigationChanged: () -> Void = {}
+
+    func showOverview() {
+        guard showsModelRankings else { return }
+        showsModelRankings = false
+        navigationChanged()
+    }
+
+    func showRankings() {
+        guard !showsModelRankings else { return }
+        showsModelRankings = true
+        navigationChanged()
+    }
 }
 
 private struct ControlCenterMaterial: NSViewRepresentable {
@@ -36,7 +49,7 @@ struct DashboardView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            if model.showsModelRankings { rankingCard() } else { card(now: context.date) }
+            if model.showsModelRankings { rankingCard(now: context.date) } else { card(now: context.date) }
         }
         .frame(width: 344)
         .background(ControlCenterMaterial())
@@ -149,8 +162,8 @@ struct DashboardView: View {
                 Text("等待采集器首次上传").font(.system(size: 10)).foregroundColor(muted)
             }
 
-            Button { model.showsModelRankings = true } label: {
-                HStack { Label("最近 7 天模型消耗榜", systemImage: "chart.bar.xaxis"); Spacer(); Image(systemName: "chevron.right") }
+            Button(action: model.showRankings) {
+                HStack { Label("当前周期模型消耗榜", systemImage: "chart.bar.xaxis"); Spacer(); Image(systemName: "chevron.right") }
                     .font(.system(size: 11, weight: .medium)).padding(11)
             }.buttonStyle(ControlCenterButtonStyle())
 
@@ -180,17 +193,31 @@ struct DashboardView: View {
         .foregroundColor(ink)
     }
 
-    private func rankingCard() -> some View {
+    private func rankingCard(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button { model.showsModelRankings = false } label: { Label("返回", systemImage: "chevron.left") }.buttonStyle(ControlCenterButtonStyle())
-                Spacer()
-                Text("模型消耗榜").font(.system(size: 17, weight: .semibold))
-                Spacer()
-                Button(action: model.refresh) { Image(systemName: "arrow.clockwise") }.disabled(model.refreshing).buttonStyle(ControlCenterButtonStyle())
-            }
-            Text("最近 7 天 · 全部已接入设备 · 按总 Tokens 排序").font(.system(size: 10)).foregroundColor(muted)
-            if let rankings = model.dashboard?.model_rankings {
+            HStack(spacing: 10) {
+                Button(action: model.showOverview) {
+                    Label("返回总览", systemImage: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(blue)
+                        .padding(.horizontal, 10).frame(height: 34)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(ControlCenterButtonStyle())
+                .accessibilityHint("返回 Tokivue 用量总览，不关闭弹窗")
+                Spacer(minLength: 0)
+                Text("模型消耗榜").font(.system(size: 16, weight: .semibold))
+                Spacer(minLength: 0)
+                Button(action: model.refresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(blue).frame(width: 34, height: 34)
+                }
+                .disabled(model.refreshing).buttonStyle(ControlCenterButtonStyle())
+                .accessibilityLabel("刷新模型消耗榜")
+            }.fixedSize(horizontal: false, vertical: true)
+            Text("当前周额度周期 · 全部设备 · 按总 Tokens 排序").font(.system(size: 10)).foregroundColor(muted)
+            if let rankings = model.dashboard?.model_rankings, rankings.isCurrent(at: now) {
                 Text("总计 \(tokens(rankings.total_tokens)) Tokens").font(.system(size: 23, weight: .semibold, design: .rounded))
                 ScrollView {
                     VStack(spacing: 8) {
@@ -207,17 +234,31 @@ struct DashboardView: View {
                             }.padding(12).module()
                         }
                     }
-                }.frame(height: 400)
-                if rankings.models.isEmpty { Text("最近 7 天暂无已采集记录").font(.system(size: 12)).foregroundColor(muted) }
-                Text("截止 " + rankings.to.replacingOccurrences(of: "T", with: " ").prefix(19) + " UTC").font(.system(size: 9)).foregroundColor(muted)
+                }.frame(maxHeight: .infinity)
+                if rankings.models.isEmpty { Text("当前周期暂无已采集记录").font(.system(size: 12)).foregroundColor(muted) }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("周期 \(date(rankings.startDate, format: "MM/dd HH:mm")) — \(date(rankings.windowEndDate, format: "MM/dd HH:mm"))")
+                    Text("北京时间 · 统计截至 \(date(rankings.observedDate, format: "MM/dd HH:mm"))")
+                }.font(.system(size: 9)).foregroundColor(muted)
             } else {
-                Text("接收端升级后即可显示模型周榜。").font(.system(size: 13))
-                Text("本地应用已就绪，请按部署说明更新 Apps Script 接收端。").font(.system(size: 11)).foregroundColor(muted)
+                Text("等待当前周期排行").font(.system(size: 13))
+                Text("正在等待有效的周额度重置时间和同步数据，请刷新看板。").font(.system(size: 11)).foregroundColor(muted)
                 Spacer()
                 Button("打开 Google Sheets", action: model.openSheet)
             }
             if model.error != nil { Text("离线缓存：榜单可能不是最新数据").font(.system(size: 10)).foregroundColor(.orange) }
             Text("金额为 API 等价估值；生图次数与图片输出估值单独统计。").font(.system(size: 9)).foregroundColor(muted)
+            Divider().opacity(0.6)
+            Button(action: model.showOverview) {
+                Label("返回用量总览", systemImage: "arrow.left")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(blue)
+                    .frame(maxWidth: .infinity).frame(height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(ControlCenterButtonStyle())
+            .accessibilityHint("返回额度、今日 Tokens 和设备估值")
+            .fixedSize(horizontal: false, vertical: true)
         }.padding(14).frame(height: 590).foregroundColor(ink)
     }
 
