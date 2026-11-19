@@ -80,7 +80,19 @@ function autoPriceLog_(ss, rows) {
   sheet.getRange(sheet.getLastRow()+1,1,rows.length,7).setValues(rows);
 }
 
+// Google Sheets may time out after creating a tab; retry the idempotent update
+// in the same invocation, without extra triggers or further user interaction.
 function autoUpdateModelPrices() {
+  for(let attempt=0;attempt<3;attempt++) {
+    try {return updateModelPricesOnce_();}
+    catch(error) {
+      if(attempt===2 || !/timeout|timed out|超时|service unavailable|HTTP (?:429|50[0234])/i.test(String(error.message)))throw error;
+      Utilities.sleep((attempt+1)*2000);
+    }
+  }
+}
+
+function updateModelPricesOnce_() {
   const props=PropertiesService.getScriptProperties();
   if (props.getProperty('TOKIVUE_AUTO_PRICING_ENABLED')!=='true') return;
   const lock=LockService.getScriptLock();
@@ -153,7 +165,7 @@ function autoUpdateModelPrices() {
     props.setProperty('TOKIVUE_PRICE_LAST_ERROR',now.toISOString()+' '+String(error.message).slice(0,180));
     if (!locked) {lock.waitLock(25000);locked=true;}
     ss=ss || SpreadsheetApp.openById(props.getProperty('SPREADSHEET_ID'));
-    autoPriceLog_(ss,[[now,'ERROR','','','',OFFICIAL_PRICE_SOURCE,String(error.message).slice(0,180)]]);
+    try {autoPriceLog_(ss,[[now,'ERROR','','','',OFFICIAL_PRICE_SOURCE,String(error.message).slice(0,180)]]);} catch (_) { /* Preserve the original failure when Sheets logging also fails. */ }
     throw error;
   } finally {if (locked) lock.releaseLock();}
 }

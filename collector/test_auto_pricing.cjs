@@ -24,7 +24,7 @@ class Sheet {
  }
 }
 let props={},sheets={},triggers=[],fetches=0,status=200,document=fixture,refreshes=0,held=false;
-const ctx={console,Date,Map,Set,Number,JSON,Math,
+const ctx={console,Date,Map,Set,Number,JSON,Math,Utilities:{sleep(){}},
  PropertiesService:{getScriptProperties:()=>({getProperty:k=>props[k]??null,setProperty:(k,v)=>props[k]=v,setProperties:o=>Object.assign(props,o),deleteProperty:k=>delete props[k]})},
  SpreadsheetApp:{Dimension:{ROWS:'ROWS'},openById:()=>({getSheetByName:n=>sheets[n],insertSheet:n=>(sheets[n]=new Sheet())}),flush(){}},
  UrlFetchApp:{fetch:(url,options)=>{assert.equal(url,official+'.md');assert.equal(options.followRedirects,false);fetches++;return{getResponseCode:()=>status,getContentText:()=>document};}},
@@ -59,3 +59,11 @@ reset(true);ctx.enableAutoPricing();s=sheets.Prices;const end=parsed.length+1;as
 reset();s=sheets.Prices;s.getRange(2,1,1,7).setValues([['gpt-6.2-astra',99,1,99,1,'https://example.com/custom','']]);ctx.enableAutoPricing();assert.equal(s.getRange(2,2).getValues()[0][0],99);
 reset();status=503;assert.throws(()=>ctx.enableAutoPricing());assert.equal(triggers.length,1,'transient first-fetch failure keeps retry trigger');
 console.log('Auto pricing checks passed: strict tier/column parsing, real fixture, exclusions, new models, updates, manual overrides, failures, disable/re-enable, idempotency, formula expansion and note preservation.');
+
+reset();let failures=0;const originalOpen=ctx.SpreadsheetApp.openById;
+ctx.SpreadsheetApp.openById=(...args)=>{if(failures++===0)throw new Error('Spreadsheet service timed out');return originalOpen(...args);};
+ctx.enableAutoPricing();assert.ok(props.TOKIVUE_PRICE_LAST_SUCCESS);assert.equal(triggers.length,1);assert.equal(props.TOKIVUE_PRICE_LAST_ERROR,undefined);
+ctx.SpreadsheetApp.openById=originalOpen;
+reset();status=503;assert.throws(()=>ctx.enableAutoPricing());assert.equal(fetches,3,'transient failures are bounded to three attempts');
+reset();document='changed format';assert.throws(()=>ctx.enableAutoPricing());assert.equal(fetches,1,'schema failures are not retried');
+console.log('Bounded transient retries and non-retryable schema failures passed.');
