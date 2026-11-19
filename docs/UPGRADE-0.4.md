@@ -54,3 +54,7 @@ Mac 弹窗点击“最近 7 天模型消耗榜”，或在 Sheet 打开“模型
 本功能不推算 Fast 对订阅额度的实际扣减倍率，官方已用百分比仍直接读取官方账号接口。
 
 参考：[官方价格](https://developers.openai.com/api/docs/pricing)、[GPT-6.2 Astra](https://developers.openai.com/api/docs/models/gpt-6.2-astra)、[Apps Script 时间触发器](https://developers.google.com/apps-script/guides/triggers/installable)。核实日期：2026-11-18。
+
+## 6. 排查首次初始化
+
+若 Google 提示电子表格服务超时，原有数据和价格会保留，已注册的定时触发器也会保留。服务恢复后可重新运行 `enableAutoPricing()`，不需要再次执行 `setup()`。客户端认证后的看板响应包含 `price_update_status`（是否启用、最近成功时间和错误）；公开 GET 不暴露这些信息。只有最近成功时间存在且 FastPrices 已写入，才表示价格初始化完成。

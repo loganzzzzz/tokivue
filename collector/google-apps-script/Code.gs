@@ -273,6 +273,11 @@ function getDashboardData(currentDeviceId = null) {
     total_cost:(!events.length && !imageRows.length) || totalMissing ? null : totalCost,
     image_stats:imageStats,
     model_rankings:modelRankings,
+    price_update_status:{
+      enabled:PropertiesService.getScriptProperties().getProperty('TOKIVUE_AUTO_PRICING_ENABLED')==='true',
+      last_success:PropertiesService.getScriptProperties().getProperty('TOKIVUE_PRICE_LAST_SUCCESS') || null,
+      last_error:PropertiesService.getScriptProperties().getProperty('TOKIVUE_PRICE_LAST_ERROR') || null
+    },
     current_device_id:currentDeviceId,
     current_device_cost:currentDeviceId === null || deviceMissing ? null : deviceCost,
     current_device_window_cost:currentDeviceId === null || start === null || deviceWindowMissing ? null : deviceWindowCost,

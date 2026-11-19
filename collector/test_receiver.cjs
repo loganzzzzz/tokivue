@@ -249,3 +249,10 @@ assert.equal(ranked.total_tokens,4400000);assert.equal(ranked.models[0].model,'g
 assert.ok(Math.abs(ranked.models[0].extra_cost-9.16)<1e-10);assert.equal(ranked.models.find(r=>r.model==='gpt-6-luna').cost,null);
 assert.equal(context.modelRankings_([],priceMap,new Map(),new Map(),new Date()).total_tokens,0);
 console.log('Rolling model rankings, tier enrichment, Fast/Ultrafast estimates, promo boundary and excluded-model counts passed.');
+
+// Operational status is available only through the authenticated dashboard response.
+props.TOKIVUE_AUTO_PRICING_ENABLED='true';props.TOKIVUE_PRICE_LAST_SUCCESS='2026-11-19T03:00:00Z';props.TOKIVUE_PRICE_LAST_ERROR='HTTP 503';
+const health=send({...body,events:[],snapshots:[]}).dashboard.price_update_status;
+assert.equal(health.enabled,true);assert.equal(health.last_success,'2026-11-19T03:00:00Z');assert.equal(health.last_error,'HTTP 503');
+assert.equal(send({...body,secret:'wrong',events:[],snapshots:[]}).dashboard,undefined);
+console.log('Authenticated auto-pricing status checks passed.');
