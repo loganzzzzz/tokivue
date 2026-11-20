@@ -214,16 +214,6 @@ struct DashboardView: View {
     private func rankingCard(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Button(action: model.showOverview) {
-                    Label("返回总览", systemImage: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(blue)
-                        .padding(.horizontal, 10).frame(height: 34)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(ControlCenterButtonStyle())
-                .accessibilityHint("返回 Tokivue 用量总览，不关闭弹窗")
-                Spacer(minLength: 0)
                 Text("模型消耗榜").font(.system(size: 16, weight: .semibold))
                 Spacer(minLength: 0)
                 Button(action: model.refresh) {
