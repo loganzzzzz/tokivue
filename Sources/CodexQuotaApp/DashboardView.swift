@@ -8,8 +8,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var error: String?
     @Published var refreshing = false
     @Published var showsModelRankings = false
-    @Published var rankingContentHeight: CGFloat = 240
-    @Published var rankingViewportLimit: CGFloat = 320
+    @Published var panelHeight: CGFloat = 720
     @Published var fetchedAt: Date?
     @Published var nextRefreshAt: Date?
     var refresh: () -> Void = {}
@@ -17,15 +16,6 @@ final class DashboardViewModel: ObservableObject {
     var openSheet: () -> Void = {}
     var quit: () -> Void = {}
     var navigationChanged: () -> Void = {}
-    var layoutChanged: () -> Void = {}
-
-    func updateRankingHeight(_ height: CGFloat) {
-        let height = ceil(height)
-        guard height > 0, abs(rankingContentHeight - height) > 0.5 else { return }
-        rankingContentHeight = height
-        layoutChanged()
-    }
-
     func showOverview() {
         guard showsModelRankings else { return }
         showsModelRankings = false
@@ -51,13 +41,6 @@ private struct ControlCenterMaterial: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
-private struct RankingContentHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 struct DashboardView: View {
     @ObservedObject var model: DashboardViewModel
     private let blue = Color(red: 0.08, green: 0.43, blue: 0.96)
@@ -66,10 +49,13 @@ struct DashboardView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            if model.showsModelRankings { rankingCard(now: context.date) } else { card(now: context.date) }
+            if model.showsModelRankings {
+                rankingCard(now: context.date)
+            } else {
+                ScrollView { card(now: context.date) }.frame(maxHeight: .infinity)
+            }
         }
-        .frame(width: 344)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 344, height: model.panelHeight, alignment: .top)
         .background(ControlCenterMaterial())
         .preferredColorScheme(.light)
     }
@@ -245,6 +231,7 @@ struct DashboardView: View {
                     Text("当前周期暂无已采集记录")
                         .font(.system(size: 12)).foregroundColor(muted)
                         .frame(maxWidth: .infinity).padding(.vertical, 20).module()
+                    Spacer(minLength: 0)
                 } else {
                     ScrollView {
                         VStack(spacing: 8) {
@@ -253,12 +240,7 @@ struct DashboardView: View {
                             }
                         }
                         .fixedSize(horizontal: false, vertical: true)
-                        .background(GeometryReader { geometry in
-                            Color.clear.preference(key: RankingContentHeightKey.self, value: geometry.size.height)
-                        })
-                    }
-                    .frame(height: min(model.rankingContentHeight, model.rankingViewportLimit))
-                    .onPreferenceChange(RankingContentHeightKey.self) { model.updateRankingHeight($0) }
+                    }.frame(maxHeight: .infinity)
                 }
                 HStack {
                     Text("按总 Tokens 排序")
@@ -272,6 +254,7 @@ struct DashboardView: View {
                         .font(.system(size: 11)).foregroundColor(muted)
                     Button("打开 Google Sheets", action: model.openSheet).font(.system(size: 11))
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(12).module()
+                Spacer(minLength: 0)
             }
             if model.error != nil {
                 Text("离线缓存：榜单可能不是最新数据")
@@ -290,7 +273,7 @@ struct DashboardView: View {
                 .buttonStyle(ControlCenterButtonStyle())
                 .accessibilityHint("返回额度、今日 Tokens 和设备估值")
             }.fixedSize(horizontal: false, vertical: true)
-        }.padding(14).foregroundColor(ink)
+        }.padding(14).frame(maxHeight: .infinity, alignment: .top).foregroundColor(ink)
     }
 
     private func rankingRow(_ item: SheetsDashboard.ModelUsage, index: Int) -> some View {

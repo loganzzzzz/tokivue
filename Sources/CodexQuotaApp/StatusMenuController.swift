@@ -38,11 +38,7 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
         }
         model.quit = { NSApp.terminate(nil) }
         model.navigationChanged = { [weak self] in
-            // Re-measure after SwiftUI has applied the navigation state change.
-            DispatchQueue.main.async { self?.resizeCard(resetDismiss: true) }
-        }
-        model.layoutChanged = { [weak self] in
-            DispatchQueue.main.async { self?.resizeCard() }
+            self?.resetAutoDismiss()
         }
         popover.behavior = .transient
         popover.delegate = self
@@ -67,6 +63,8 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
     @objc private func toggleCard(_ sender: Any?) {
         if popover.isShown { popover.performClose(nil); return }
         guard let button = statusItem.button else { return }
+        let screen = button.window?.screen ?? NSScreen.main
+        model.panelHeight = min(720, max(360, (screen?.visibleFrame.height ?? 800) - 32))
         model.showOverview()
         resizeCard()
         if model.fetchedAt.map({ Date().timeIntervalSince($0) > 60 }) ?? true { refresh() }
@@ -81,17 +79,6 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
     private func resizeCard(resetDismiss: Bool = false) {
         guard !stopped, let host = popover.contentViewController as? DashboardHostingController else { return }
         let size = host.fittedContentSize()
-        if model.showsModelRankings {
-            let screen = statusItem.button?.window?.screen ?? NSScreen.main
-            let available = max(360, (screen?.visibleFrame.height ?? 800) - 32)
-            let chrome = size.height - min(model.rankingContentHeight, model.rankingViewportLimit)
-            let limit = min(CGFloat(320), max(80, available - chrome))
-            if abs(model.rankingViewportLimit - limit) > 0.5 {
-                model.rankingViewportLimit = limit
-                DispatchQueue.main.async { [weak self] in self?.resizeCard(resetDismiss: resetDismiss) }
-                return
-            }
-        }
         host.applyContentSize(size)
         if popover.contentSize != size { popover.contentSize = size }
         // AppKit may have resized its child during the popover update.
