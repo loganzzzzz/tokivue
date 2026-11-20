@@ -33,14 +33,13 @@ if let previewIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard-p
                 model.dashboard = cache.0
                 model.fetchedAt = cache.1
             }
-            let view = NSHostingView(rootView: DashboardView(model: model))
-            view.frame = NSRect(origin: .zero, size: view.fittingSize)
-            view.layoutSubtreeIfNeeded()
+            let host = DashboardHostingController(model: model)
+            let view = host.view
+            host.applyContentSize(host.fittedContentSize())
             // Let content-height preferences settle before rendering the preview.
             for _ in 0..<5 {
                 RunLoop.current.run(until: Date().addingTimeInterval(0.04))
-                view.frame = NSRect(origin: .zero, size: view.fittingSize)
-                view.layoutSubtreeIfNeeded()
+                host.applyContentSize(host.fittedContentSize())
             }
             guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
                 throw CocoaError(.fileWriteUnknown)

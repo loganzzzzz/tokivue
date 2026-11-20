@@ -48,10 +48,9 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.animates = true
         popover.appearance = NSAppearance(named: .aqua)
-        let host = NSHostingController(rootView: DashboardView(model: model))
-        host.preferredContentSize = host.view.fittingSize
+        let host = DashboardHostingController(model: model)
         popover.contentViewController = host
-        popover.contentSize = host.view.fittingSize
+        resizeCard()
         updateStatusItem()
         refresh()
     }
@@ -80,11 +79,23 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
     }
 
     private func resizeCard(resetDismiss: Bool = false) {
-        guard !stopped, let host = popover.contentViewController else { return }
-        host.view.layoutSubtreeIfNeeded()
-        let size = host.view.fittingSize
-        host.preferredContentSize = size
-        popover.contentSize = size
+        guard !stopped, let host = popover.contentViewController as? DashboardHostingController else { return }
+        let size = host.fittedContentSize()
+        if model.showsModelRankings {
+            let screen = statusItem.button?.window?.screen ?? NSScreen.main
+            let available = max(360, (screen?.visibleFrame.height ?? 800) - 32)
+            let chrome = size.height - min(model.rankingContentHeight, model.rankingViewportLimit)
+            let limit = min(CGFloat(320), max(80, available - chrome))
+            if abs(model.rankingViewportLimit - limit) > 0.5 {
+                model.rankingViewportLimit = limit
+                DispatchQueue.main.async { [weak self] in self?.resizeCard(resetDismiss: resetDismiss) }
+                return
+            }
+        }
+        host.applyContentSize(size)
+        if popover.contentSize != size { popover.contentSize = size }
+        // AppKit may have resized its child during the popover update.
+        host.applyContentSize(size)
         if popover.isShown && resetDismiss { resetAutoDismiss() }
     }
 

@@ -9,6 +9,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var refreshing = false
     @Published var showsModelRankings = false
     @Published var rankingContentHeight: CGFloat = 240
+    @Published var rankingViewportLimit: CGFloat = 320
     @Published var fetchedAt: Date?
     @Published var nextRefreshAt: Date?
     var refresh: () -> Void = {}
@@ -68,6 +69,7 @@ struct DashboardView: View {
             if model.showsModelRankings { rankingCard(now: context.date) } else { card(now: context.date) }
         }
         .frame(width: 344)
+        .fixedSize(horizontal: false, vertical: true)
         .background(ControlCenterMaterial())
         .preferredColorScheme(.light)
     }
@@ -235,10 +237,16 @@ struct DashboardView: View {
 
             if let rankings = model.dashboard?.model_rankings, rankings.isCurrent(at: now) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("当前周额度周期 · 全部设备")
-                        .font(.system(size: 10, weight: .medium)).foregroundColor(muted)
-                    Text("\(tokens(rankings.total_tokens)) Tokens")
-                        .font(.system(size: 23, weight: .semibold, design: .rounded))
+                    HStack {
+                        Text("本周期总消耗")
+                        Spacer()
+                        Text("全部设备")
+                    }.font(.system(size: 10, weight: .medium)).foregroundColor(muted)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(tokens(rankings.total_tokens))
+                            .font(.system(size: 26, weight: .semibold, design: .rounded)).monospacedDigit()
+                        Text("Tokens").font(.system(size: 12, weight: .medium)).foregroundColor(muted)
+                    }
                     Text("\(date(rankings.startDate, format: "MM/dd HH:mm")) — \(date(rankings.windowEndDate, format: "MM/dd HH:mm")) · 北京时间")
                         .font(.system(size: 9)).foregroundColor(muted)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(12).module()
@@ -259,7 +267,7 @@ struct DashboardView: View {
                             Color.clear.preference(key: RankingContentHeightKey.self, value: geometry.size.height)
                         })
                     }
-                    .frame(height: min(model.rankingContentHeight, 340))
+                    .frame(height: min(model.rankingContentHeight, model.rankingViewportLimit))
                     .onPreferenceChange(RankingContentHeightKey.self) { model.updateRankingHeight($0) }
                 }
                 HStack {
@@ -279,7 +287,7 @@ struct DashboardView: View {
                 Text("离线缓存：榜单可能不是最新数据")
                     .font(.system(size: 10)).foregroundColor(.orange)
             }
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 Text("API 等价估值 · 生图次数与图片输出估值单独统计")
                     .font(.system(size: 9)).foregroundColor(muted)
                 Button(action: model.showOverview) {
