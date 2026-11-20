@@ -39,6 +39,9 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
         model.quit = { NSApp.terminate(nil) }
         model.navigationChanged = { [weak self] in
             // Re-measure after SwiftUI has applied the navigation state change.
+            DispatchQueue.main.async { self?.resizeCard(resetDismiss: true) }
+        }
+        model.layoutChanged = { [weak self] in
             DispatchQueue.main.async { self?.resizeCard() }
         }
         popover.behavior = .transient
@@ -76,13 +79,13 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
         resetAutoDismiss()
     }
 
-    private func resizeCard() {
+    private func resizeCard(resetDismiss: Bool = false) {
         guard !stopped, let host = popover.contentViewController else { return }
         host.view.layoutSubtreeIfNeeded()
         let size = host.view.fittingSize
         host.preferredContentSize = size
         popover.contentSize = size
-        if popover.isShown { resetAutoDismiss() }
+        if popover.isShown && resetDismiss { resetAutoDismiss() }
     }
 
     private func resetAutoDismiss() {
@@ -175,6 +178,7 @@ final class StatusMenuController: NSObject, NSPopoverDelegate {
                     self.model.error = error.localizedDescription
                 }
                 self.updateStatusItem()
+                DispatchQueue.main.async { self.resizeCard() }
                 self.model.nextRefreshAt = Date().addingTimeInterval(interval)
                 let timer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
                     MainActor.assumeIsolated { self?.refresh() }

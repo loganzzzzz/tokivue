@@ -36,6 +36,12 @@ if let previewIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard-p
             let view = NSHostingView(rootView: DashboardView(model: model))
             view.frame = NSRect(origin: .zero, size: view.fittingSize)
             view.layoutSubtreeIfNeeded()
+            // Let content-height preferences settle before rendering the preview.
+            for _ in 0..<5 {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+                view.frame = NSRect(origin: .zero, size: view.fittingSize)
+                view.layoutSubtreeIfNeeded()
+            }
             guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
                 throw CocoaError(.fileWriteUnknown)
             }

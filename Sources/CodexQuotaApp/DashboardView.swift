@@ -8,6 +8,7 @@ final class DashboardViewModel: ObservableObject {
     @Published var error: String?
     @Published var refreshing = false
     @Published var showsModelRankings = false
+    @Published var rankingContentHeight: CGFloat = 240
     @Published var fetchedAt: Date?
     @Published var nextRefreshAt: Date?
     var refresh: () -> Void = {}
@@ -15,6 +16,14 @@ final class DashboardViewModel: ObservableObject {
     var openSheet: () -> Void = {}
     var quit: () -> Void = {}
     var navigationChanged: () -> Void = {}
+    var layoutChanged: () -> Void = {}
+
+    func updateRankingHeight(_ height: CGFloat) {
+        let height = ceil(height)
+        guard height > 0, abs(rankingContentHeight - height) > 0.5 else { return }
+        rankingContentHeight = height
+        layoutChanged()
+    }
 
     func showOverview() {
         guard showsModelRankings else { return }
@@ -39,6 +48,13 @@ private struct ControlCenterMaterial: NSViewRepresentable {
         return view
     }
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+private struct RankingContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
 }
 
 struct DashboardView: View {
@@ -194,7 +210,7 @@ struct DashboardView: View {
     }
 
     private func rankingCard(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Button(action: model.showOverview) {
                     Label("返回总览", systemImage: "chevron.left")
@@ -216,50 +232,94 @@ struct DashboardView: View {
                 .disabled(model.refreshing).buttonStyle(ControlCenterButtonStyle())
                 .accessibilityLabel("刷新模型消耗榜")
             }.fixedSize(horizontal: false, vertical: true)
-            Text("当前周额度周期 · 全部设备 · 按总 Tokens 排序").font(.system(size: 10)).foregroundColor(muted)
+
             if let rankings = model.dashboard?.model_rankings, rankings.isCurrent(at: now) {
-                Text("总计 \(tokens(rankings.total_tokens)) Tokens").font(.system(size: 23, weight: .semibold, design: .rounded))
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(Array(rankings.models.enumerated()), id: \.element.id) { index, item in
-                            VStack(alignment: .leading, spacing: 6) {
-                                HStack { Text("\(index + 1)").foregroundColor(blue); Text(item.model).lineLimit(1).minimumScaleFactor(0.7); Spacer(); Text(tokens(item.total_tokens)).monospacedDigit() }.font(.system(size: 12, weight: .semibold))
-                                ProgressView(value: min(1, max(0, item.share))).tint(blue)
-                                HStack { Text(String(format: "占比 %.1f%%", item.share * 100)); Spacer(); Text(item.excluded ? "估值已排除" : item.cost.map { String(format: "$%.2f", $0) } ?? "待计价") }.font(.system(size: 10)).foregroundColor(muted)
-                                if item.fast_tokens + item.ultrafast_tokens > 0 {
-                                    Text("Fast \(tokens(item.fast_tokens)) · Ultrafast \(tokens(item.ultrafast_tokens)) Tokens").font(.system(size: 9)).foregroundColor(muted)
-                                    Text(item.extra_cost.map { String(format: "加速额外估值 $%.2f", $0) } ?? "加速估值待确认").font(.system(size: 10)).foregroundColor(blue)
-                                }
-                                if item.unknown_tier_tokens > 0 { Text("历史记录按 Standard 估算 · \(tokens(item.unknown_tier_tokens)) Tokens").font(.system(size: 9)).foregroundColor(muted) }
-                            }.padding(12).module()
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("当前周额度周期 · 全部设备")
+                        .font(.system(size: 10, weight: .medium)).foregroundColor(muted)
+                    Text("\(tokens(rankings.total_tokens)) Tokens")
+                        .font(.system(size: 23, weight: .semibold, design: .rounded))
+                    Text("\(date(rankings.startDate, format: "MM/dd HH:mm")) — \(date(rankings.windowEndDate, format: "MM/dd HH:mm")) · 北京时间")
+                        .font(.system(size: 9)).foregroundColor(muted)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(12).module()
+
+                if rankings.models.isEmpty {
+                    Text("当前周期暂无已采集记录")
+                        .font(.system(size: 12)).foregroundColor(muted)
+                        .frame(maxWidth: .infinity).padding(.vertical, 20).module()
+                } else {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(Array(rankings.models.enumerated()), id: \.element.id) { index, item in
+                                rankingRow(item, index: index)
+                            }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: RankingContentHeightKey.self, value: geometry.size.height)
+                        })
                     }
-                }.frame(maxHeight: .infinity)
-                if rankings.models.isEmpty { Text("当前周期暂无已采集记录").font(.system(size: 12)).foregroundColor(muted) }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("周期 \(date(rankings.startDate, format: "MM/dd HH:mm")) — \(date(rankings.windowEndDate, format: "MM/dd HH:mm"))")
-                    Text("北京时间 · 统计截至 \(date(rankings.observedDate, format: "MM/dd HH:mm"))")
+                    .frame(height: min(model.rankingContentHeight, 340))
+                    .onPreferenceChange(RankingContentHeightKey.self) { model.updateRankingHeight($0) }
+                }
+                HStack {
+                    Text("按总 Tokens 排序")
+                    Spacer()
+                    Text("更新 \(date(rankings.observedDate, format: "MM/dd HH:mm"))")
                 }.font(.system(size: 9)).foregroundColor(muted)
             } else {
-                Text("等待当前周期排行").font(.system(size: 13))
-                Text("正在等待有效的周额度重置时间和同步数据，请刷新看板。").font(.system(size: 11)).foregroundColor(muted)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("等待当前周期排行").font(.system(size: 13, weight: .medium))
+                    Text("正在等待有效的周额度重置时间和同步数据，请刷新看板。")
+                        .font(.system(size: 11)).foregroundColor(muted)
+                    Button("打开 Google Sheets", action: model.openSheet).font(.system(size: 11))
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(12).module()
+            }
+            if model.error != nil {
+                Text("离线缓存：榜单可能不是最新数据")
+                    .font(.system(size: 10)).foregroundColor(.orange)
+            }
+            VStack(spacing: 8) {
+                Text("API 等价估值 · 生图次数与图片输出估值单独统计")
+                    .font(.system(size: 9)).foregroundColor(muted)
+                Button(action: model.showOverview) {
+                    Label("返回用量总览", systemImage: "arrow.left")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(blue)
+                        .frame(maxWidth: .infinity).frame(height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(ControlCenterButtonStyle())
+                .accessibilityHint("返回额度、今日 Tokens 和设备估值")
+            }.fixedSize(horizontal: false, vertical: true)
+        }.padding(14).foregroundColor(ink)
+    }
+
+    private func rankingRow(_ item: SheetsDashboard.ModelUsage, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("\(index + 1)").foregroundColor(blue)
+                Text(item.model).lineLimit(1).minimumScaleFactor(0.7)
                 Spacer()
-                Button("打开 Google Sheets", action: model.openSheet)
+                Text(tokens(item.total_tokens)).monospacedDigit()
+            }.font(.system(size: 12, weight: .semibold))
+            ProgressView(value: min(1, max(0, item.share))).tint(blue)
+            HStack {
+                Text(String(format: "占比 %.1f%%", item.share * 100))
+                Spacer()
+                Text(item.excluded ? "估值已排除" : item.cost.map { String(format: "$%.2f", $0) } ?? "待计价")
+            }.font(.system(size: 10)).foregroundColor(muted)
+            if item.fast_tokens + item.ultrafast_tokens > 0 {
+                Text("Fast \(tokens(item.fast_tokens)) · Ultrafast \(tokens(item.ultrafast_tokens)) Tokens")
+                    .font(.system(size: 9)).foregroundColor(muted)
+                Text(item.extra_cost.map { String(format: "加速额外估值 $%.2f", $0) } ?? "加速估值待确认")
+                    .font(.system(size: 10)).foregroundColor(blue)
             }
-            if model.error != nil { Text("离线缓存：榜单可能不是最新数据").font(.system(size: 10)).foregroundColor(.orange) }
-            Text("金额为 API 等价估值；生图次数与图片输出估值单独统计。").font(.system(size: 9)).foregroundColor(muted)
-            Divider().opacity(0.6)
-            Button(action: model.showOverview) {
-                Label("返回用量总览", systemImage: "arrow.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(blue)
-                    .frame(maxWidth: .infinity).frame(height: 38)
-                    .contentShape(Rectangle())
+            if item.unknown_tier_tokens > 0 {
+                Text("历史记录按 Standard 估算 · \(tokens(item.unknown_tier_tokens)) Tokens")
+                    .font(.system(size: 9)).foregroundColor(muted)
             }
-            .buttonStyle(ControlCenterButtonStyle())
-            .accessibilityHint("返回额度、今日 Tokens 和设备估值")
-            .fixedSize(horizontal: false, vertical: true)
-        }.padding(14).frame(height: 590).foregroundColor(ink)
+        }.padding(10).module()
     }
 
     private func statistic(icon: String, title: String, value: String) -> some View {
